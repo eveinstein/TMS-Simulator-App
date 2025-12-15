@@ -155,7 +155,7 @@ export function TMSCoil({ headMesh, onCoilMove }) {
   });
   
   const coilStateRef = useRef({
-    position: new THREE.Vector3(0, 0.15, 0.05),
+    position: new THREE.Vector3(0, 0.2, -0.02),  // Above head, slightly posterior (scalp, not face)
     normal: new THREE.Vector3(0, 1, 0),
     yaw: 0,
     pitch: 0,
@@ -222,8 +222,8 @@ export function TMSCoil({ headMesh, onCoilMove }) {
         console.log('[TMSCoil] ScalpSurface initialized');
       }
       
-      // Initial snap to surface
-      const startPos = new THREE.Vector3(0, 0.15, 0.05);
+      // Initial snap to surface - target top of scalp (not face)
+      const startPos = new THREE.Vector3(0, 0.2, -0.02);
       const initial = scalpSurfaceRef.current.findClosestSurfacePoint(startPos);
       if (initial) {
         coilStateRef.current.position.copy(initial.point);

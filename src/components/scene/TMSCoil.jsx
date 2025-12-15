@@ -3,21 +3,17 @@
  * ===========
  * TMS coil with surface-following movement.
  * 
- * Features:
- * - Auto-normalization to 0.18m world size
- * - WASD/Arrow keys for scalp-constrained tangential movement
- * - Q/E for yaw rotation (around surface normal)
- * - R/F for pitch adjustment (tilt, clamped ±30°)
- * - Mouse drag to reposition
- * - Spacebar pulse firing in rMT mode
- * - Animated pulse rings during stimulation
+ * FIXES APPLIED:
+ * - Fix E: Pivot normalization so contact plane is at z=0
+ * - Fix F: Dynamic scalpOffset = 0.002 + thickness * 0.05
+ * - Fix G: Mouse drag uses canvas rect, not window size
+ * - Fix C integration: Pass surface normal to keysToMoveDirection
+ * - Fix D integration: Scale movement by delta time
  * 
- * COORDINATE SYSTEM (Radiologic Convention):
- * - +X = Patient Left
- * - Movement is always tangent to scalp surface
+ * Target size: 0.06m (TARGET_SIZES.coil)
  */
 
-import React, { useRef, useMemo, useEffect, useCallback } from 'react';
+import React, { useRef, useMemo, useEffect, useCallback, useState } from 'react';
 import { useGLTF } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useTMSStore } from '../../stores/tmsStore';
@@ -33,8 +29,7 @@ import * as THREE from 'three';
 
 // Pulse ring animation component
 function PulseRings({ active, position }) {
-  const ringsRef = useRef([]);
-  const [rings, setRings] = React.useState([]);
+  const [rings, setRings] = useState([]);
   
   useEffect(() => {
     if (!active) {
@@ -42,7 +37,6 @@ function PulseRings({ active, position }) {
       return;
     }
     
-    // Create new ring on each pulse
     const interval = setInterval(() => {
       const id = Date.now();
       setRings(prev => [...prev.slice(-5), { id, scale: 1, opacity: 1 }]);
@@ -82,28 +76,93 @@ function PulseRings({ active, position }) {
   );
 }
 
+/**
+ * FIX E: Normalize coil pivot so contact plane is at local z=0
+ * This ensures the group origin represents the contact plane
+ * 
+ * @param {THREE.Object3D} coilObject - The coil scene/group
+ * @returns {{ thickness: number }} Coil dimensions for offset calculation
+ */
+function normalizeCoilPivot(coilObject) {
+  const bbox = new THREE.Box3().setFromObject(coilObject);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  bbox.getSize(size);
+  bbox.getCenter(center);
+  
+  const thickness = size.z;
+  
+  // Recenter the coil so bbox center is at origin
+  coilObject.traverse((child) => {
+    if (child.isMesh) {
+      child.position.sub(center);
+    }
+  });
+  
+  // Shift along local +Z so that minimum Z face (contact side) is at z=0
+  const contactOffset = thickness / 2;
+  coilObject.traverse((child) => {
+    if (child.isMesh) {
+      child.position.z += contactOffset;
+    }
+  });
+  
+  if (import.meta.env.DEV) {
+    console.log('[TMSCoil] FIX E - Pivot normalized:', {
+      thickness: thickness.toFixed(4),
+      contactOffset: contactOffset.toFixed(4),
+    });
+  }
+  
+  return { thickness };
+}
+
+/**
+ * FIX H: Validate coil scale is within expected bounds
+ */
+function validateCoilScale(coilObject) {
+  const bbox = new THREE.Box3().setFromObject(coilObject);
+  const size = new THREE.Vector3();
+  bbox.getSize(size);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  
+  if (maxDim > 0.09 || maxDim < 0.03) {
+    console.warn(`[TMSCoil] SCALE WARNING: Coil max dimension ${maxDim.toFixed(4)}m is outside expected range [0.03, 0.09]m`);
+  }
+  
+  if (import.meta.env.DEV) {
+    console.log('[TMSCoil] FIX H - Scale validation:', {
+      maxDim: maxDim.toFixed(4),
+      expected: '0.06m (±50%)',
+      valid: maxDim >= 0.03 && maxDim <= 0.09,
+    });
+  }
+}
+
 export function TMSCoil({ headMesh, onCoilMove }) {
   const groupRef = useRef();
   const coilRef = useRef();
   const scalpSurfaceRef = useRef(null);
   
-  // Key state tracking - lowercase key names matching e.key.toLowerCase()
+  // FIX F: Store effective scalp offset based on coil thickness
+  const [effectiveOffset, setEffectiveOffset] = useState(MOVEMENT_CONFIG.scalpOffset);
+  
   const keysRef = useRef({
     w: false, a: false, s: false, d: false,
     arrowup: false, arrowdown: false, arrowleft: false, arrowright: false,
     q: false, e: false,
-    r: false, f: false, // Pitch controls
+    r: false, f: false,
   });
   
-  // Coil state - position, normal, yaw, pitch
   const coilStateRef = useRef({
-    position: new THREE.Vector3(0, 0.15, 0.05),  // Start above head, slightly forward
+    position: new THREE.Vector3(0, 0.15, 0.05),
     normal: new THREE.Vector3(0, 1, 0),
     yaw: 0,
     pitch: 0,
   });
   
-  const { camera } = useThree();
+  // FIX G: Get gl for canvas rect
+  const { camera, gl } = useThree();
   const gltf = useGLTF(`${import.meta.env.BASE_URL}models/coil.glb`);
   
   const {
@@ -121,37 +180,71 @@ export function TMSCoil({ headMesh, onCoilMove }) {
   // Clone and process the coil model
   const clonedScene = useMemo(() => {
     const clone = gltf.scene.clone(true);
+    
+    // Apply scale normalization (target: 0.06m)
     normalizeModelScale(clone, 'coil', true);
+    
+    // FIX H: Validate scale is reasonable
+    validateCoilScale(clone);
+    
+    // FIX E: Normalize pivot so contact plane is at z=0
+    const { thickness } = normalizeCoilPivot(clone);
+    
+    // FIX F: Calculate effective offset = 0.002 + thickness * 0.05
+    const calculatedOffset = 0.002 + thickness * 0.05;
+    
+    if (import.meta.env.DEV) {
+      console.log('[TMSCoil] FIX F - Effective offset:', {
+        thickness: thickness.toFixed(4),
+        calculatedOffset: calculatedOffset.toFixed(4),
+      });
+    }
+    
+    clone.userData.effectiveOffset = calculatedOffset;
+    
     return clone;
   }, [gltf]);
+  
+  // Set effective offset after clone is processed
+  useEffect(() => {
+    if (clonedScene.userData.effectiveOffset) {
+      setEffectiveOffset(clonedScene.userData.effectiveOffset);
+    }
+  }, [clonedScene]);
   
   // Initialize scalp surface when head mesh is ready
   useEffect(() => {
     if (headMesh && !scalpSurfaceRef.current) {
-      // CRITICAL: Ensure head mesh matrices are up to date
       headMesh.updateMatrixWorld(true);
-      
       scalpSurfaceRef.current = new ScalpSurface(headMesh);
       
       if (import.meta.env.DEV) {
         console.log('[TMSCoil] ScalpSurface initialized');
       }
       
-      // Initial snap to surface - start above the head
+      // Initial snap to surface
       const startPos = new THREE.Vector3(0, 0.15, 0.05);
       const initial = scalpSurfaceRef.current.findClosestSurfacePoint(startPos);
       if (initial) {
         coilStateRef.current.position.copy(initial.point);
         coilStateRef.current.position.add(
-          initial.normal.clone().multiplyScalar(MOVEMENT_CONFIG.scalpOffset)
+          initial.normal.clone().multiplyScalar(effectiveOffset)
         );
         coilStateRef.current.normal.copy(initial.normal);
         updateCoilTransform();
+        
+        if (import.meta.env.DEV) {
+          console.log('[TMSCoil] Initial position (outer scalp):', {
+            x: coilStateRef.current.position.x.toFixed(4),
+            y: coilStateRef.current.position.y.toFixed(4),
+            z: coilStateRef.current.position.z.toFixed(4),
+            isOutermost: initial.isOutermost,
+          });
+        }
       }
     }
-  }, [headMesh]);
+  }, [headMesh, effectiveOffset]);
   
-  // Update store and trigger callbacks - now uses quaternion directly
   const updateCoilTransform = useCallback(() => {
     const state = coilStateRef.current;
     const quaternion = calculateCoilOrientation(state.normal, state.yaw, state.pitch);
@@ -167,20 +260,17 @@ export function TMSCoil({ headMesh, onCoilMove }) {
     const handleKeyDown = (e) => {
       const key = e.key.toLowerCase();
       
-      // Check if this key is tracked
       if (key in keysRef.current) {
         keysRef.current[key] = true;
         e.preventDefault();
       }
       
-      // Spacebar fires pulse in rMT mode
       if (e.code === 'Space' && mode === 'rmt' && 
           (rmt.phase === 'hunt' || rmt.phase === 'titration')) {
         e.preventDefault();
-        // Calculate distance to hotspot
         if (rmt.hotspotPosition) {
           const hotspot = new THREE.Vector3(...rmt.hotspotPosition);
-          const distance = coilStateRef.current.position.distanceTo(hotspot) * 1000; // mm
+          const distance = coilStateRef.current.position.distanceTo(hotspot) * 1000;
           firePulse(distance);
         }
       }
@@ -196,32 +286,33 @@ export function TMSCoil({ headMesh, onCoilMove }) {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     
-    // Cleanup - also reset all keys to prevent stuck keys
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      // Reset all keys on unmount
       Object.keys(keysRef.current).forEach(k => keysRef.current[k] = false);
     };
   }, [mode, rmt.phase, rmt.hotspotPosition, firePulse]);
   
-  // Frame update for movement
-  useFrame(() => {
+  // FIX D: Frame update with delta time scaling
+  useFrame((_, delta) => {
     if (isCoilLocked || !scalpSurfaceRef.current) return;
     
     const keys = keysRef.current;
     const state = coilStateRef.current;
     let moved = false;
     
-    // Get movement direction from WASD/arrow keys
-    const moveDir = keysToMoveDirection(keys, camera);
+    // FIX C: Pass surface normal to keysToMoveDirection
+    const moveDir = keysToMoveDirection(keys, camera, state.normal);
     
     if (moveDir.lengthSq() > 0) {
-      // Move along scalp surface
+      // FIX D: Scale movement by delta time
+      const frameStep = MOVEMENT_CONFIG.moveSpeed * delta;
+      
       const result = scalpSurfaceRef.current.moveAlongSurface(
         state.position,
         moveDir,
-        MOVEMENT_CONFIG.moveSpeed
+        frameStep,
+        effectiveOffset
       );
       
       if (result) {
@@ -231,23 +322,23 @@ export function TMSCoil({ headMesh, onCoilMove }) {
       }
     }
     
-    // Yaw rotation with Q/E
+    // FIX D: Yaw rotation scaled by delta
     if (keys.q) {
-      state.yaw -= MOVEMENT_CONFIG.rotateSpeed;
+      state.yaw -= MOVEMENT_CONFIG.rotateSpeed * delta;
       moved = true;
     }
     if (keys.e) {
-      state.yaw += MOVEMENT_CONFIG.rotateSpeed;
+      state.yaw += MOVEMENT_CONFIG.rotateSpeed * delta;
       moved = true;
     }
     
-    // Pitch adjustment with R/F (clamped)
+    // FIX D: Pitch scaled by delta
     if (keys.r) {
-      state.pitch = clampPitch(state.pitch + MOVEMENT_CONFIG.pitchSpeed);
+      state.pitch = clampPitch(state.pitch + MOVEMENT_CONFIG.pitchSpeed * delta);
       moved = true;
     }
     if (keys.f) {
-      state.pitch = clampPitch(state.pitch - MOVEMENT_CONFIG.pitchSpeed);
+      state.pitch = clampPitch(state.pitch - MOVEMENT_CONFIG.pitchSpeed * delta);
       moved = true;
     }
     
@@ -269,7 +360,7 @@ export function TMSCoil({ headMesh, onCoilMove }) {
     }
   }, [coilRotation]);
   
-  // Mouse drag handler
+  // FIX G: Mouse drag handler using canvas rect
   const handlePointerDown = useCallback((e) => {
     if (isCoilLocked) return;
     e.stopPropagation();
@@ -277,19 +368,21 @@ export function TMSCoil({ headMesh, onCoilMove }) {
     const onPointerMove = (moveEvent) => {
       if (!scalpSurfaceRef.current) return;
       
-      // Raycast from mouse to find new position on scalp
-      const raycaster = new THREE.Raycaster();
+      // FIX G: Get canvas rect for proper NDC calculation
+      const rect = gl.domElement.getBoundingClientRect();
+      
       const mouse = new THREE.Vector2(
-        (moveEvent.clientX / window.innerWidth) * 2 - 1,
-        -(moveEvent.clientY / window.innerHeight) * 2 + 1
+        ((moveEvent.clientX - rect.left) / rect.width) * 2 - 1,
+        -((moveEvent.clientY - rect.top) / rect.height) * 2 + 1
       );
+      
+      const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(mouse, camera);
       
       const result = scalpSurfaceRef.current.raycastToSurface(raycaster);
       if (result) {
-        // Apply offset above surface
         coilStateRef.current.position.copy(result.point).add(
-          result.normal.clone().multiplyScalar(MOVEMENT_CONFIG.scalpOffset)
+          result.normal.clone().multiplyScalar(effectiveOffset)
         );
         coilStateRef.current.normal.copy(result.normal);
         updateCoilTransform();
@@ -303,9 +396,8 @@ export function TMSCoil({ headMesh, onCoilMove }) {
     
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
-  }, [camera, isCoilLocked, updateCoilTransform]);
+  }, [camera, gl, isCoilLocked, updateCoilTransform, effectiveOffset]);
   
-  // Determine if pulse animation should be active
   const isPulsing = session.isRunning && !session.isPaused;
   
   return (
@@ -316,13 +408,11 @@ export function TMSCoil({ headMesh, onCoilMove }) {
         onPointerDown={handlePointerDown}
       />
       
-      {/* Pulse animation */}
       <PulseRings 
         active={isPulsing} 
-        position={[0, -MOVEMENT_CONFIG.scalpOffset, 0]} 
+        position={[0, -effectiveOffset, 0]} 
       />
       
-      {/* Lock indicator */}
       {isCoilLocked && (
         <mesh position={[0, 0.015, 0]}>
           <sphereGeometry args={[0.002, 8, 8]} />
@@ -333,7 +423,6 @@ export function TMSCoil({ headMesh, onCoilMove }) {
   );
 }
 
-// Preload at module level
 try {
   useGLTF.preload(`${import.meta.env.BASE_URL || './'}models/coil.glb`);
 } catch (e) {

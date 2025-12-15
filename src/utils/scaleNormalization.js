@@ -94,6 +94,15 @@ export function normalizeModelScale(scene, modelType, log = true) {
   
   // Step 4: Verify final size
   const { size: finalSize } = computeBoundingBox(scene);
+  const finalMaxDim = Math.max(finalSize.x, finalSize.y, finalSize.z);
+  
+  // FIX H: Scale sanity check - warn if final size is outside expected bounds
+  if (modelType === 'coil') {
+    if (finalMaxDim > 0.09 || finalMaxDim < 0.03) {
+      console.warn(`[ScaleNorm] FIX H WARNING: ${modelType} max dimension ${finalMaxDim.toFixed(4)}m is outside expected range [0.03, 0.09]m`);
+      console.warn('[ScaleNorm] This may indicate invisible bounds (cables/empties) or double-scaling');
+    }
+  }
   
   if (log) {
     console.log(`[ScaleNorm] ${modelType.toUpperCase()} Applied scale: ${scaleFactor.toFixed(6)}`);
@@ -101,7 +110,7 @@ export function normalizeModelScale(scene, modelType, log = true) {
       x: finalSize.x.toFixed(4),
       y: finalSize.y.toFixed(4),
       z: finalSize.z.toFixed(4),
-      maxDim: Math.max(finalSize.x, finalSize.y, finalSize.z).toFixed(4),
+      maxDim: finalMaxDim.toFixed(4),
       target: targetSize,
     });
   }

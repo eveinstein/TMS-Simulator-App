@@ -224,6 +224,7 @@ function SceneContent({
   onTargetClick, 
   selectedTarget,
   cameraPreset,
+  onCoilUpdate,
 }) {
   const [headMesh, setHeadMesh] = useState(null);
   const [coilPos, setCoilPos] = useState(null);
@@ -233,8 +234,11 @@ function SceneContent({
   const { targetPositions, mode, rmt } = useTMSStore();
   
   // Calculate nearest target when coil moves
-  const handleCoilMove = useCallback((position) => {
+  const handleCoilMove = useCallback((position, normal) => {
     setCoilPos(position.clone());
+    
+    // Pass to parent for debug overlay
+    onCoilUpdate?.(position.clone(), normal?.clone());
     
     if (!targetPositions) return;
     
@@ -252,7 +256,7 @@ function SceneContent({
     } else {
       setNearestTarget({ name: null, distance: null });
     }
-  }, [targetPositions]);
+  }, [targetPositions, onCoilUpdate]);
   
   return (
     <>
@@ -355,9 +359,37 @@ function SceneLegend() {
   );
 }
 
+// Dev-only debug overlay showing coil position and surface normal
+function DebugOverlay({ coilPos, coilNormal }) {
+  if (!import.meta.env.DEV || !coilPos) return null;
+  
+  return (
+    <div style={{
+      position: 'absolute',
+      top: '60px',
+      left: '20px',
+      background: 'rgba(0, 0, 0, 0.85)',
+      color: '#22c55e',
+      padding: '8px 12px',
+      borderRadius: '6px',
+      fontSize: '10px',
+      fontFamily: 'monospace',
+      zIndex: 10,
+      opacity: 0.9,
+    }}>
+      <div style={{ marginBottom: '4px', color: '#60a5fa', fontWeight: 'bold' }}>Debug Info</div>
+      <div>Pos: ({coilPos.x.toFixed(3)}, {coilPos.y.toFixed(3)}, {coilPos.z.toFixed(3)})</div>
+      {coilNormal && (
+        <div>Nrm: ({coilNormal.x.toFixed(3)}, {coilNormal.y.toFixed(3)}, {coilNormal.z.toFixed(3)})</div>
+      )}
+    </div>
+  );
+}
+
 // Main exported component
 export function TMSScene({ onTargetClick, selectedTarget }) {
   const [cameraPreset, setCameraPreset] = useState('default');
+  const [debugInfo, setDebugInfo] = useState({ pos: null, normal: null });
   const { mode } = useTMSStore();
   
   // Set clinician view by default in rMT mode
@@ -368,6 +400,11 @@ export function TMSScene({ onTargetClick, selectedTarget }) {
       setCameraPreset('default');
     }
   }, [mode]);
+  
+  // Handle coil updates for debug overlay
+  const handleCoilUpdate = useCallback((pos, normal) => {
+    setDebugInfo({ pos, normal });
+  }, []);
   
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -391,6 +428,7 @@ export function TMSScene({ onTargetClick, selectedTarget }) {
             onTargetClick={onTargetClick}
             selectedTarget={selectedTarget}
             cameraPreset={cameraPreset}
+            onCoilUpdate={handleCoilUpdate}
           />
         </Suspense>
       </Canvas>
@@ -449,6 +487,7 @@ export function TMSScene({ onTargetClick, selectedTarget }) {
       </div>
       
       <SceneLegend />
+      <DebugOverlay coilPos={debugInfo.pos} coilNormal={debugInfo.normal} />
     </div>
   );
 }

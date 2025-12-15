@@ -1,115 +1,228 @@
 /**
- * TMS Simulator - Main Application
- * =================================
- * Production-quality 3D Transcranial Magnetic Stimulation Simulator
+ * App.jsx
+ * =======
+ * Main application component with tab navigation.
  * 
- * RADIOLOGIC CONVENTION (enforced throughout):
- * Patient LEFT = +X = viewer's RIGHT
- * Patient RIGHT = −X = viewer's LEFT
- * 
- * Features:
- * - 3D head model with interactive targets
- * - Surface-attached TMS coil with snap-to-target
- * - Real-time session timing with accurate pulse delivery
- * - Premium medical device UI
- * 
- * Architecture:
- * - React + Vite
- * - @react-three/fiber + drei for 3D
- * - Zustand for state management
- * - Modular component structure
- * 
- * @author TMS Clinical Simulation Team
- * @version 1.0.0
+ * Modes:
+ * - TMS Simulator: Protocol-based stimulation
+ * - Motor Threshold Training (rMT): Training game
  */
 
-import React from 'react';
-import { TMSScene } from './components/3d/TMSScene';
-import { ControlPanel } from './components/ui/ControlPanel';
-import { TargetPopup } from './components/ui/TargetPopup';
+import React, { useState, useCallback } from 'react';
+import { TMSScene } from './components/scene/TMSScene';
+import { MachinePanel } from './components/ui/MachinePanel';
+import { RMTPanel } from './components/ui/RMTPanel';
 import { useTMSStore } from './stores/tmsStore';
 import './App.css';
 
-function App() {
-  const { selectTarget } = useTMSStore();
+// Target info popup component
+function TargetPopup({ target, onClose }) {
+  if (!target) return null;
   
-  const handleTargetClick = (targetName) => {
-    selectTarget(targetName);
+  const targetInfo = {
+    F3: {
+      title: 'Left DLPFC (F3)',
+      description: 'Left dorsolateral prefrontal cortex - Primary target for depression treatment.',
+      note: 'The Beam F3 method uses a tape measure from nasion to locate this region without neuronavigation.',
+    },
+    F4: {
+      title: 'Right DLPFC (F4)',
+      description: 'Right dorsolateral prefrontal cortex.',
+    },
+    FP2: {
+      title: 'Right OFC (FP2)',
+      description: 'Right orbitofrontal cortex.',
+    },
+    C3: {
+      title: 'Left Motor (C3)',
+      description: 'Left primary motor cortex - Used for motor threshold determination.',
+    },
+    SMA: {
+      title: 'Supplementary Motor Area',
+      description: 'Involved in motor planning and coordination.',
+    },
   };
+  
+  const info = targetInfo[target] || { title: target, description: '' };
+  
+  return (
+    <div className="target-popup-overlay" onClick={onClose}>
+      <div className="target-popup" onClick={(e) => e.stopPropagation()}>
+        <button className="popup-close" onClick={onClose}>×</button>
+        <h3>{info.title}</h3>
+        <p>{info.description}</p>
+        {info.note && <p className="popup-note">{info.note}</p>}
+      </div>
+    </div>
+  );
+}
+
+// Dev tools panel
+function DevTools() {
+  const [isOpen, setIsOpen] = useState(false);
+  const { coilPosition, coilRotation, targetPositions, protocol, session, rmt, mode } = useTMSStore();
+  
+  // Import scale data getter
+  const [scaleData, setScaleData] = useState({});
+  
+  useEffect(() => {
+    // Dynamically import to avoid circular deps
+    import('./utils/scaleNormalization').then(mod => {
+      setScaleData(mod.getScaleData());
+    });
+  }, []);
+  
+  if (!isOpen) {
+    return (
+      <button 
+        className="dev-toggle"
+        onClick={() => setIsOpen(true)}
+        title="Open Developer Tools"
+      >
+        🛠️ Dev
+      </button>
+    );
+  }
+  
+  return (
+    <div className="dev-panel">
+      <button className="dev-close" onClick={() => setIsOpen(false)}>×</button>
+      <h4>Dev Tools</h4>
+      
+      <div className="dev-section">
+        <strong>Mode</strong>
+        <pre>{mode}</pre>
+      </div>
+      
+      <div className="dev-section">
+        <strong>Coil Position</strong>
+        <pre>{coilPosition ? 
+          `X: ${coilPosition[0].toFixed(4)}
+Y: ${coilPosition[1].toFixed(4)}
+Z: ${coilPosition[2].toFixed(4)}` : 'Not set'}</pre>
+      </div>
+      
+      <div className="dev-section">
+        <strong>Coil Rotation (Quat)</strong>
+        <pre>{coilRotation ? 
+          `X: ${coilRotation[0].toFixed(4)}
+Y: ${coilRotation[1].toFixed(4)}
+Z: ${coilRotation[2].toFixed(4)}
+W: ${coilRotation[3].toFixed(4)}` : 'Not set'}</pre>
+      </div>
+      
+      <div className="dev-section">
+        <strong>Scale Data</strong>
+        <pre>{Object.keys(scaleData).length > 0 ? 
+          Object.entries(scaleData).map(([k, v]) => 
+            `${k}: scale=${v.scaleFactor.toFixed(4)}, target=${v.targetSize}m`
+          ).join('\n') : 'Loading...'}</pre>
+      </div>
+      
+      <div className="dev-section">
+        <strong>Targets Found</strong>
+        <pre>{targetPositions ? Object.keys(targetPositions).join(', ') : 'None'}</pre>
+      </div>
+      
+      {mode === 'rmt' && (
+        <div className="dev-section">
+          <strong>rMT State</strong>
+          <pre>{JSON.stringify({
+            phase: rmt.phase,
+            trial: rmt.trialNumber,
+            intensity: rmt.intensity,
+            trueMT: rmt.trueMT ? Math.round(rmt.trueMT) : null,
+            distToHotspot: rmt.distanceToHotspot?.toFixed(1),
+            titration: `${rmt.titrationHits}/${rmt.titrationCount}`,
+          }, null, 2)}</pre>
+        </div>
+      )}
+      
+      {mode === 'simulator' && (
+        <>
+          <div className="dev-section">
+            <strong>Protocol</strong>
+            <pre>{JSON.stringify(protocol, null, 2)}</pre>
+          </div>
+          
+          <div className="dev-section">
+            <strong>Session</strong>
+            <pre>{JSON.stringify(session, null, 2)}</pre>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function App() {
+  const { mode, setMode } = useTMSStore();
+  const [selectedTarget, setSelectedTarget] = useState(null);
+  const [showPopup, setShowPopup] = useState(null);
+  
+  const handleTargetClick = useCallback((name) => {
+    setSelectedTarget(name);
+    setShowPopup(name);
+  }, []);
+  
+  const handleClosePopup = useCallback(() => {
+    setShowPopup(null);
+  }, []);
   
   return (
     <div className="app">
-      {/* 3D Scene Container */}
-      <main className="scene-container">
-        <TMSScene onTargetClick={handleTargetClick} />
+      {/* Header with navigation */}
+      <header className="app-header">
+        <div className="app-title">
+          <span className="app-logo">⚡</span>
+          TMS Simulator
+        </div>
         
-        {/* Top header overlay */}
-        <header className="app-header">
-          <div className="header-content">
-            <h1 className="app-title">
-              <span className="title-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M12 8v4l2 2" />
-                </svg>
-              </span>
-              TMS Simulator
-            </h1>
-            <div className="header-badge">
-              Educational Demo
-            </div>
-          </div>
-        </header>
+        <nav className="app-nav">
+          <button
+            className={`nav-tab ${mode === 'simulator' ? 'active' : ''}`}
+            onClick={() => setMode('simulator')}
+          >
+            TMS Simulator
+          </button>
+          <button
+            className={`nav-tab ${mode === 'rmt' ? 'active' : ''}`}
+            onClick={() => setMode('rmt')}
+          >
+            Motor Threshold Training
+          </button>
+        </nav>
         
-        {/* Instructions overlay */}
-        <div className="instructions-overlay">
-          <div className="instruction-item">
-            <span className="instruction-key">Click</span>
-            <span className="instruction-text">targets for info</span>
-          </div>
-          <div className="instruction-item">
-            <span className="instruction-key">WASD</span>
-            <span className="instruction-text">move coil</span>
-          </div>
-          <div className="instruction-item">
-            <span className="instruction-key">Q/E</span>
-            <span className="instruction-text">rotate coil</span>
-          </div>
-          <div className="instruction-item">
-            <span className="instruction-key">Scroll</span>
-            <span className="instruction-text">to zoom</span>
-          </div>
-          <div className="instruction-item">
-            <span className="instruction-key">Right-drag</span>
-            <span className="instruction-text">to orbit</span>
-          </div>
+        <div className="app-header-spacer" />
+      </header>
+      
+      {/* Main content */}
+      <main className="app-main">
+        {/* 3D Scene */}
+        <div className="scene-container">
+          <TMSScene 
+            onTargetClick={handleTargetClick}
+            selectedTarget={selectedTarget}
+          />
+        </div>
+        
+        {/* Control Panel */}
+        <div className="panel-container">
+          {mode === 'simulator' ? (
+            <MachinePanel />
+          ) : (
+            <RMTPanel />
+          )}
         </div>
       </main>
       
-      {/* Control Panel Sidebar */}
-      <aside className="control-sidebar">
-        <ControlPanel />
-      </aside>
+      {/* Target popup */}
+      <TargetPopup target={showPopup} onClose={handleClosePopup} />
       
-      {/* Target Popup Modal */}
-      <TargetPopup />
+      {/* Dev tools */}
+      <DevTools />
     </div>
   );
 }
 
 export default App;
-
-/**
- * EXTENSION POINT:
- * ================
- * To add a second major feature (e.g., neuronavigation mode, MEP recording,
- * multi-coil setup), create a new component folder and import here.
- * 
- * Example structure for future features:
- * - src/components/navigation/   - Neuronavigation components
- * - src/components/mep/          - MEP recording interface
- * - src/stores/navigationStore.js - Separate state for navigation
- * 
- * The modular architecture supports adding features without modifying
- * existing components significantly.
- */

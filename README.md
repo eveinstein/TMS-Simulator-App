@@ -1,45 +1,35 @@
 # TMS Simulator
 
-A production-quality 3D Transcranial Magnetic Stimulation (TMS) Simulator built with React, Three.js, and premium medical device UI aesthetics.
+A production-quality 3D TMS (Transcranial Magnetic Stimulation) training simulator built with React and Three.js.
 
 ## Features
 
-### 3D Visualization
-- **Realistic head model** with proper lighting (key, fill, rim lights)
-- **Interactive target markers** (F3, F4, FP2, C3, SMA)
-- **Anatomical fiducials** (Nasion, Inion, LPA, RPA)
-- **TMS coil** with surface-attached sliding behavior
+### TMS Simulator Mode
+- **3D Head Model** with EEG targets (F3, F4, FP2, C3, SMA) and fiducials
+- **Interactive TMS Coil** with scalp-constrained physics
+- **WASD Controls** for surface movement, Q/E for rotation
+- **Mouse Drag** to snap coil to scalp positions
+- **Protocol Configuration**: frequency, intensity, pulses, inter-train interval
+- **Session Timing**: accurate pulse scheduling with progress tracking
+- **Target Locking**: lock coil to targets within 20mm
+- **Radiologic Convention**: validated left/right orientation
 
-### Coil Interaction
-- **WASD keys**: Move coil across scalp surface (camera-relative)
-- **Q/E keys**: Rotate coil counter-clockwise/clockwise around surface normal
-- **Mouse drag**: Slide coil along scalp surface via raycasting
-- **Shift+drag**: Rotate coil around its local normal
-- **Snap-to-target**: Click targets to snap and lock the coil
-- **Distance indicator**: Real-time display of distance to nearest target (in mm)
-- **Lock mechanism**: Prevents accidental coil movement during sessions
+### Motor Threshold (rMT) Training Mode
+- **Hunt Phase**: Find the motor hotspot with hidden target
+- **Titration Phase**: Determine threshold with single/10-pulse trials
+- **Grading System**: A-F grades based on accuracy
+- **Realistic Physics**: Distance-dependent response probability
 
-### Target Information
-- Click any target or fiducial for educational popups
-- **F3 popup** includes Left DLPFC info and Beam F3 tape-measure method description
-- **SMA popup** includes Supplementary Motor Area explanation and positioning
-- Coordinate convention clearly displayed
+## Controls
 
-### TMS Machine Control Panel
-- **Stimulation types**: Standard rTMS (1-20 Hz), iTBS, cTBS
-- **Parameters**: Frequency, intensity, pulses per train, ITI, total pulses
-- **Presets**: One-click protocol loading (10 Hz F3 depression, SMA OCD, etc.)
-- **Session controls**: Start, Pause, Resume, Stop, Reset
-- **Progress tracking**: Real-time pulse count, elapsed/remaining time, progress bar
-
-## Radiologic Convention
-
-**This simulator strictly enforces radiologic convention:**
-
-```
-Patient LEFT  = +X axis = Viewer's RIGHT
-Patient RIGHT = −X axis = Viewer's LEFT
-```
+| Key | Action |
+|-----|--------|
+| W/S | Move coil forward/backward on scalp |
+| A/D | Move coil left/right on scalp |
+| ↑/↓ | Move coil up/down on scalp |
+| Q/E | Rotate coil clockwise/counter-clockwise |
+| Space | Fire pulse (rMT mode) |
+| Mouse Drag | Snap coil to scalp position |
 
 ## Installation
 
@@ -48,66 +38,52 @@ npm install
 npm run dev
 ```
 
-## Railway Deployment
+## Build
 
-This app is configured for one-click Railway deployment.
-
-### Option 1: Deploy from GitHub
-1. Push this repo to GitHub
-2. Go to [Railway](https://railway.app)
-3. Click "New Project" → "Deploy from GitHub repo"
-4. Select your repository
-5. Railway auto-detects the config and deploys
-
-### Option 2: Deploy via Railway CLI
 ```bash
-npm install -g @railway/cli
-railway login
-railway init
-railway up
+npm run build
 ```
 
-### Configuration Files
-- `railway.json` - Railway build/deploy settings
-- `package.json` - Contains `start` script for production serving
+## Technology Stack
 
-## Controls
+- React 18
+- Three.js / React Three Fiber
+- Zustand (state management)
+- Vite (build tool)
 
-### Keyboard (WASD/QE)
-- **W/S**: Move coil forward/backward (relative to camera view)
-- **A/D**: Move coil left/right (relative to camera view)
-- **Q/E**: Rotate coil counter-clockwise/clockwise
-
-### Mouse
-- **Drag coil**: Slide along scalp surface
-- **Shift+drag**: Rotate around surface normal
-- **Right-drag**: Orbit camera
-- **Scroll**: Zoom in/out
-
-## How Scalp Sliding Works
-
-1. **Raycasting**: On pointer move or WASD press, find target position
-2. **Intersection**: Ray cast from head center outward to find scalp point
-3. **Position**: Coil placed at intersection + offset along normal
-4. **Orientation**: Rotation aligned with scalp tangent plane
-5. **User rotation**: Q/E or Shift+drag rotates around local normal
-
-## Swapping GLB Models
-
-### Head Model
-Place at `public/models/head.glb`. Include:
-- Main head mesh (named "head" or "scalp")
-- Target markers: F3, F4, FP2, C3, SMA
-- Fiducials: Nasion, Inion, LPA, RPA
-
-### Coil Model
-Place at `public/models/coil.glb` with contact surface facing -Y.
-
-## Protocol Timing
+## Project Structure
 
 ```
-train_duration = pulses_per_train / frequency_hz
-session_duration = (num_trains × train_duration) + ((num_trains - 1) × ITI)
+src/
+├── components/
+│   ├── scene/          # 3D scene components
+│   │   ├── HeadModel.jsx
+│   │   ├── TMSCoil.jsx
+│   │   └── TMSScene.jsx
+│   └── ui/             # Control panels
+│       ├── MachinePanel.jsx/css
+│       └── RMTPanel.jsx/css
+├── stores/
+│   └── tmsStore.js     # Zustand store
+├── engine/
+│   └── pulseScheduler.js
+├── utils/
+│   ├── scaleNormalization.js
+│   └── surfaceMovement.js
+├── App.jsx
+├── App.css
+└── main.jsx
 ```
 
-Example 10 Hz / 3000 pulses / 40 per train / 11s ITI ≈ 18.6 minutes
+## Protocols
+
+Example protocols included:
+- Depression 10Hz (standard)
+- Depression 1Hz (inhibitory)
+- iTBS (intermittent theta burst)
+- cTBS (continuous theta burst)
+- OCD SMA
+
+## License
+
+MIT

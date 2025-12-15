@@ -22,11 +22,11 @@ import * as THREE from 'three';
 
 // Movement configuration - single source of truth
 export const MOVEMENT_CONFIG = {
-  moveSpeed: 0.003,       // Units per frame (world space, ~3mm)
-  rotateSpeed: 0.04,      // Radians per frame for yaw
-  pitchSpeed: 0.02,       // Radians per frame for pitch
-  scalpOffset: 0.012,     // Distance above scalp surface (12mm)
-  snapThreshold: 0.02,    // Distance to snap to target (20mm)
+  moveSpeed: 0.002,       // Units per frame (world space, ~2mm)
+  rotateSpeed: 0.03,      // Radians per frame for yaw
+  pitchSpeed: 0.015,      // Radians per frame for pitch
+  scalpOffset: 0.006,     // Distance above scalp surface (6mm - reduced for smaller coil)
+  snapThreshold: 0.015,   // Distance to snap to target (15mm)
   maxPitch: Math.PI / 6,  // ±30 degrees pitch limit
 };
 
@@ -64,6 +64,9 @@ export class ScalpSurface {
     
     this.headMesh = mesh;
     
+    // CRITICAL: Ensure matrices are up to date
+    mesh.updateMatrixWorld(true);
+    
     // Compute head center from geometry bounding box
     if (mesh.geometry) {
       mesh.geometry.computeBoundingBox();
@@ -97,6 +100,9 @@ export class ScalpSurface {
     
     // Direction from head center to target
     const direction = this._tempVec.subVectors(worldPos, this.headCenter).normalize();
+    
+    // Skip if direction is zero (target is at head center)
+    if (direction.lengthSq() < 0.0001) return null;
     
     // Cast ray from center outward
     this.raycaster.set(this.headCenter, direction);

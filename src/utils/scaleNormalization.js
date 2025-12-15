@@ -16,7 +16,7 @@ import * as THREE from 'three';
 // Target sizes in world units (meters)
 export const TARGET_SIZES = {
   head: 0.22,   // Adult head ~22cm tall
-  coil: 0.18,   // TMS coil ~18cm wide
+  coil: 0.06,   // TMS coil ~6cm (figure-8 coil diameter)
 };
 
 // Storage for computed scale data (for dev tools)

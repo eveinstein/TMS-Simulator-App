@@ -91,17 +91,23 @@ export function HeadModel({ onHeadMeshReady, onTargetClick, selectedTarget }) {
     // Auto-normalize scale
     normalizeModelScale(clone, 'head', true);
     
+    // CRITICAL: Update matrices after scaling so raycasting works correctly
+    clone.updateMatrixWorld(true);
+    
     // Extract targets and fiducials
     const extractedTargets = {};
     const extractedFiducials = {};
     let mainHeadMesh = null;
+    let maxRadius = 0;
     
     clone.traverse((child) => {
-      // Find main head mesh (largest mesh)
-      if (child.isMesh) {
-        if (!mainHeadMesh || 
-            (child.geometry.boundingSphere?.radius > 
-             mainHeadMesh.geometry.boundingSphere?.radius)) {
+      // Find main head mesh (largest mesh by bounding sphere)
+      if (child.isMesh && child.geometry) {
+        // Ensure geometry has bounding sphere computed
+        child.geometry.computeBoundingSphere();
+        const radius = child.geometry.boundingSphere?.radius || 0;
+        if (radius > maxRadius) {
+          maxRadius = radius;
           mainHeadMesh = child;
         }
       }
@@ -127,6 +133,12 @@ export function HeadModel({ onHeadMeshReady, onTargetClick, selectedTarget }) {
         }
       }
     });
+    
+    // Ensure head mesh geometry is ready for raycasting
+    if (mainHeadMesh?.geometry) {
+      mainHeadMesh.geometry.computeBoundingBox();
+      mainHeadMesh.geometry.computeBoundingSphere();
+    }
     
     // Validate radiologic convention
     validateRadiologicConvention(extractedTargets);

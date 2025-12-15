@@ -97,7 +97,7 @@ export function TMSCoil({ headMesh, onCoilMove }) {
   
   // Coil state - position, normal, yaw, pitch
   const coilStateRef = useRef({
-    position: new THREE.Vector3(0.05, 0.12, 0.05),
+    position: new THREE.Vector3(0, 0.15, 0.05),  // Start above head, slightly forward
     normal: new THREE.Vector3(0, 1, 0),
     yaw: 0,
     pitch: 0,
@@ -128,16 +128,18 @@ export function TMSCoil({ headMesh, onCoilMove }) {
   // Initialize scalp surface when head mesh is ready
   useEffect(() => {
     if (headMesh && !scalpSurfaceRef.current) {
+      // CRITICAL: Ensure head mesh matrices are up to date
+      headMesh.updateMatrixWorld(true);
+      
       scalpSurfaceRef.current = new ScalpSurface(headMesh);
       
       if (import.meta.env.DEV) {
         console.log('[TMSCoil] ScalpSurface initialized');
       }
       
-      // Initial snap to surface
-      const initial = scalpSurfaceRef.current.findClosestSurfacePoint(
-        coilStateRef.current.position
-      );
+      // Initial snap to surface - start above the head
+      const startPos = new THREE.Vector3(0, 0.15, 0.05);
+      const initial = scalpSurfaceRef.current.findClosestSurfacePoint(startPos);
       if (initial) {
         coilStateRef.current.position.copy(initial.point);
         coilStateRef.current.position.add(
@@ -322,8 +324,8 @@ export function TMSCoil({ headMesh, onCoilMove }) {
       
       {/* Lock indicator */}
       {isCoilLocked && (
-        <mesh position={[0, 0.03, 0]}>
-          <sphereGeometry args={[0.003, 8, 8]} />
+        <mesh position={[0, 0.015, 0]}>
+          <sphereGeometry args={[0.002, 8, 8]} />
           <meshBasicMaterial color="#22c55e" />
         </mesh>
       )}

@@ -288,18 +288,46 @@ export function TMSCoil({ headMesh, coilSurfaceMesh, onCoilMove }) {
   
   // Snap coil to selected target when selectedTargetKey changes
   useEffect(() => {
-    if (!selectedTargetKey || !targetPositions || !scalpSurfaceRef.current) return;
+    console.log('[TMSCoil] Snap effect triggered:', {
+      selectedTargetKey,
+      hasTargetPositions: !!targetPositions,
+      targetKeys: targetPositions ? Object.keys(targetPositions) : [],
+      surfaceMeshReady,
+      hasScalpSurface: !!scalpSurfaceRef.current,
+      effectiveOffset,
+    });
     
-    const targetPos = targetPositions[selectedTargetKey];
-    if (!targetPos) {
-      if (import.meta.env.DEV) {
-        console.warn('[TMSCoil] Target not found:', selectedTargetKey);
-      }
+    // Need all of these to be ready
+    if (!selectedTargetKey) {
+      console.log('[TMSCoil] No target selected');
       return;
     }
     
+    if (!targetPositions) {
+      console.log('[TMSCoil] No target positions yet');
+      return;
+    }
+    
+    if (!surfaceMeshReady || !scalpSurfaceRef.current) {
+      console.log('[TMSCoil] Surface not ready yet');
+      return;
+    }
+    
+    const targetPos = targetPositions[selectedTargetKey];
+    if (!targetPos) {
+      console.warn('[TMSCoil] Target not found:', selectedTargetKey, 'Available:', Object.keys(targetPositions));
+      return;
+    }
+    
+    // Ensure targetPos is a Vector3
+    const targetVec = targetPos instanceof THREE.Vector3 
+      ? targetPos 
+      : new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z);
+    
+    console.log('[TMSCoil] Snapping to target:', selectedTargetKey, 'at', targetVec.toArray());
+    
     // Snap to the target position
-    const result = scalpSurfaceRef.current.snapToTarget(targetPos, effectiveOffset);
+    const result = scalpSurfaceRef.current.snapToTarget(targetVec, effectiveOffset);
     if (result) {
       coilStateRef.current.position.copy(result.position);
       coilStateRef.current.normal.copy(result.normal);
@@ -313,14 +341,14 @@ export function TMSCoil({ headMesh, coilSurfaceMesh, onCoilMove }) {
       
       updateCoilTransform();
       
-      if (import.meta.env.DEV) {
-        console.log('[TMSCoil] Snapped to target:', {
-          target: selectedTargetKey,
-          position: result.position.toArray().map(v => v.toFixed(4)),
-        });
-      }
+      console.log('[TMSCoil] Snapped successfully:', {
+        target: selectedTargetKey,
+        position: result.position.toArray().map(v => v.toFixed(4)),
+      });
+    } else {
+      console.warn('[TMSCoil] snapToTarget returned null for:', selectedTargetKey);
     }
-  }, [selectedTargetKey, targetPositions, effectiveOffset, coilSurfaceMesh, updateCoilTransform]);
+  }, [selectedTargetKey, targetPositions, effectiveOffset, coilSurfaceMesh, surfaceMeshReady, updateCoilTransform]);
   
   // Keyboard event handlers
   useEffect(() => {

@@ -325,21 +325,24 @@ export function MachinePanel() {
       <div className="panel-section">
         <div className="section-title">Coil Position</div>
         
-        {/* Target Selector - click to snap coil */}
-        <div className="target-selector">
+        {/* Target Selector Buttons - click to snap coil */}
+        <div className="target-buttons">
           <label>Snap to Target:</label>
-          <select
-            value={selectedTargetKey || ''}
-            onChange={(e) => setSelectedTargetKey(e.target.value || null)}
-            disabled={session.isRunning}
-          >
-            <option value="">— Select Target —</option>
-            <option value="F3">F3 - Left DLPFC</option>
-            <option value="F4">F4 - Right DLPFC</option>
-            <option value="FP2">FP2 - Right OFC</option>
-            <option value="C3">C3 - Left Motor</option>
-            <option value="SMA">SMA</option>
-          </select>
+          <div className="target-btn-group">
+            {['F3', 'F4', 'FP2', 'C3', 'SMA'].map(target => (
+              <button
+                key={target}
+                className={`target-btn ${selectedTargetKey === target ? 'selected' : ''}`}
+                onClick={() => {
+                  console.log('[MachinePanel] Setting target:', target);
+                  setSelectedTargetKey(target);
+                }}
+                disabled={session.isRunning}
+              >
+                {target}
+              </button>
+            ))}
+          </div>
         </div>
         
         <div className="position-display">

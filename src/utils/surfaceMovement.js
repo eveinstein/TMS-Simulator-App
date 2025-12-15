@@ -114,6 +114,7 @@ export class ScalpSurface {
    * - Uses local ray projection first (more stable near edges)
    * - Falls back to center-out ray
    * - FIX B: Uses continuity-based hit selection (closest to previous point)
+   * - Filters out small meshes (fiducial spheres) from hits
    * 
    * @param {THREE.Vector3} worldPos - Target position in world space
    * @param {THREE.Vector3} [previousPoint] - Previous surface point for continuity
@@ -128,19 +129,30 @@ export class ScalpSurface {
     // Skip if direction is zero (target is at head center)
     if (direction.lengthSq() < 0.0001) return null;
     
+    // Helper to filter out fiducial spheres (small meshes)
+    const filterHits = (intersects) => {
+      return intersects.filter(hit => {
+        // Skip if no geometry
+        if (!hit.object.geometry) return false;
+        // Skip small spheres (fiducials are ~0.004m radius)
+        hit.object.geometry.computeBoundingSphere();
+        const radius = hit.object.geometry.boundingSphere?.radius || 0;
+        if (radius < 0.01) return false; // Skip meshes smaller than 1cm
+        return true;
+      });
+    };
+    
     let hit = null;
     let isOutermost = false;
     
     // FIX C: Try local ray projection first (more stable near edges)
-    // Ray from slightly above the target position, pointing down toward surface
     if (previousPoint) {
       const lastNormal = this._tempVec2.subVectors(previousPoint, this.headCenter).normalize();
       const rayOrigin = this._tempVec3.copy(worldPos).add(lastNormal.clone().multiplyScalar(0.05));
       const rayDir = lastNormal.clone().negate();
       
       this.raycaster.set(rayOrigin, rayDir);
-      // FIX A: Use recursive=false to avoid hitting child objects like fiducial spheres
-      const localIntersects = this.raycaster.intersectObject(this.headMesh, false);
+      const localIntersects = filterHits(this.raycaster.intersectObject(this.headMesh, true));
       
       if (localIntersects.length > 0) {
         // FIX B: Choose hit closest to previous point for continuity
@@ -163,8 +175,7 @@ export class ScalpSurface {
     // Fallback: Cast ray from center outward
     if (!hit) {
       this.raycaster.set(this.headCenter, direction);
-      // FIX A: Use recursive=false
-      const intersects = this.raycaster.intersectObject(this.headMesh, false);
+      const intersects = filterHits(this.raycaster.intersectObject(this.headMesh, true));
       
       if (intersects.length > 0) {
         if (previousPoint && intersects.length > 1) {
@@ -193,7 +204,7 @@ export class ScalpSurface {
       const reverseDir = this._tempVec2.subVectors(this.headCenter, worldPos).normalize();
       this.raycaster.set(worldPos, reverseDir);
       
-      const reverseIntersects = this.raycaster.intersectObject(this.headMesh, false);
+      const reverseIntersects = filterHits(this.raycaster.intersectObject(this.headMesh, true));
       if (reverseIntersects.length > 0) {
         hit = reverseIntersects[0];
         isOutermost = false;
@@ -203,7 +214,7 @@ export class ScalpSurface {
     if (hit) {
       // Get face normal in world space
       const normal = hit.face.normal.clone();
-      normal.transformDirection(this.headMesh.matrixWorld);
+      normal.transformDirection(hit.object.matrixWorld);
       normal.normalize();
       
       // Ensure normal points OUTWARD (away from head center)
@@ -225,20 +236,27 @@ export class ScalpSurface {
   
   /**
    * Raycast from camera/mouse to find surface point
-   * FIX A: Uses recursive=false to avoid hitting fiducial spheres
+   * Filters out small meshes (fiducial spheres)
    * @param {THREE.Raycaster} raycaster - Configured raycaster
    * @returns {{ point: THREE.Vector3, normal: THREE.Vector3 } | null}
    */
   raycastToSurface(raycaster) {
     if (!this.headMesh) return null;
     
-    // FIX A: Use recursive=false to only hit the surface mesh
-    const intersects = raycaster.intersectObject(this.headMesh, false);
+    const intersects = raycaster.intersectObject(this.headMesh, true);
     
-    if (intersects.length > 0) {
-      const hit = intersects[0];
+    // Filter out small meshes (fiducials)
+    const filtered = intersects.filter(hit => {
+      if (!hit.object.geometry) return false;
+      hit.object.geometry.computeBoundingSphere();
+      const radius = hit.object.geometry.boundingSphere?.radius || 0;
+      return radius >= 0.01; // Only meshes >= 1cm
+    });
+    
+    if (filtered.length > 0) {
+      const hit = filtered[0];
       const normal = hit.face.normal.clone();
-      normal.transformDirection(this.headMesh.matrixWorld);
+      normal.transformDirection(hit.object.matrixWorld);
       normal.normalize();
       
       // Ensure normal points outward
@@ -306,12 +324,27 @@ export class ScalpSurface {
    * Snap to a target position on the scalp
    */
   snapToTarget(targetWorldPos, offset = MOVEMENT_CONFIG.scalpOffset) {
+    console.log('[ScalpSurface] snapToTarget called:', {
+      targetWorldPos: targetWorldPos?.toArray?.() || targetWorldPos,
+      offset,
+      hasHeadMesh: !!this.headMesh,
+    });
+    
     const surface = this.findClosestSurfacePoint(targetWorldPos);
-    if (!surface) return null;
+    if (!surface) {
+      console.warn('[ScalpSurface] findClosestSurfacePoint returned null');
+      return null;
+    }
     
     const finalPosition = surface.point.clone().add(
       surface.normal.clone().multiplyScalar(offset)
     );
+    
+    console.log('[ScalpSurface] snapToTarget result:', {
+      surfacePoint: surface.point.toArray().map(v => v.toFixed(4)),
+      normal: surface.normal.toArray().map(v => v.toFixed(4)),
+      finalPosition: finalPosition.toArray().map(v => v.toFixed(4)),
+    });
     
     return {
       position: finalPosition,

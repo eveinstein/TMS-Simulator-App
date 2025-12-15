@@ -11,13 +11,31 @@
  * - Hotspot visualization for rMT mode
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, Html } from '@react-three/drei';
 import { HeadModel } from './HeadModel';
 import { TMSCoil } from './TMSCoil';
 import { useTMSStore } from '../../stores/tmsStore';
 import * as THREE from 'three';
+
+// Loading fallback component for 3D scene
+function LoadingFallback() {
+  return (
+    <Html center>
+      <div style={{
+        background: 'rgba(0, 0, 0, 0.8)',
+        color: 'white',
+        padding: '20px 40px',
+        borderRadius: '8px',
+        fontSize: '16px',
+        fontFamily: 'system-ui, sans-serif',
+      }}>
+        Loading 3D models...
+      </div>
+    </Html>
+  );
+}
 
 // Axis indicator showing radiologic convention
 function AxisIndicator() {
@@ -361,12 +379,20 @@ export function TMSScene({ onTargetClick, selectedTarget }) {
           far: 10,
         }}
         style={{ background: 'linear-gradient(180deg, #1a1a2e 0%, #16213e 100%)' }}
+        onCreated={({ gl }) => {
+          // Log WebGL context creation for debugging
+          if (import.meta.env.DEV) {
+            console.log('[TMSScene] WebGL context created');
+          }
+        }}
       >
-        <SceneContent 
-          onTargetClick={onTargetClick}
-          selectedTarget={selectedTarget}
-          cameraPreset={cameraPreset}
-        />
+        <Suspense fallback={<LoadingFallback />}>
+          <SceneContent 
+            onTargetClick={onTargetClick}
+            selectedTarget={selectedTarget}
+            cameraPreset={cameraPreset}
+          />
+        </Suspense>
       </Canvas>
       
       {/* Camera preset buttons */}

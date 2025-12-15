@@ -104,7 +104,7 @@ export function TMSCoil({ headMesh, onCoilMove }) {
   });
   
   const { camera } = useThree();
-  const { gltf } = useGLTF('/models/coil.glb');
+  const gltf = useGLTF(`${import.meta.env.BASE_URL}models/coil.glb`);
   
   const {
     coilPosition,
@@ -331,4 +331,9 @@ export function TMSCoil({ headMesh, onCoilMove }) {
   );
 }
 
-useGLTF.preload('/models/coil.glb');
+// Preload at module level
+try {
+  useGLTF.preload(`${import.meta.env.BASE_URL || './'}models/coil.glb`);
+} catch (e) {
+  // Preload failure is not critical
+}

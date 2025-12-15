@@ -8,11 +8,12 @@
  * - Motor Threshold Training (rMT): Training game
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { TMSScene } from './components/scene/TMSScene';
 import { MachinePanel } from './components/ui/MachinePanel';
 import { RMTPanel } from './components/ui/RMTPanel';
 import { useTMSStore } from './stores/tmsStore';
+import { getScaleData } from './utils/scaleNormalization';
 import './App.css';
 
 // Target info popup component
@@ -60,17 +61,15 @@ function TargetPopup({ target, onClose }) {
 // Dev tools panel
 function DevTools() {
   const [isOpen, setIsOpen] = useState(false);
+  const [scaleData, setScaleData] = useState({});
   const { coilPosition, coilRotation, targetPositions, protocol, session, rmt, mode } = useTMSStore();
   
-  // Import scale data getter
-  const [scaleData, setScaleData] = useState({});
-  
+  // Update scale data when panel opens
   useEffect(() => {
-    // Dynamically import to avoid circular deps
-    import('./utils/scaleNormalization').then(mod => {
-      setScaleData(mod.getScaleData());
-    });
-  }, []);
+    if (isOpen) {
+      setScaleData(getScaleData());
+    }
+  }, [isOpen]);
   
   if (!isOpen) {
     return (
@@ -116,7 +115,7 @@ W: ${coilRotation[3].toFixed(4)}` : 'Not set'}</pre>
         <pre>{Object.keys(scaleData).length > 0 ? 
           Object.entries(scaleData).map(([k, v]) => 
             `${k}: scale=${v.scaleFactor.toFixed(4)}, target=${v.targetSize}m`
-          ).join('\n') : 'Loading...'}</pre>
+          ).join('\n') : 'No models loaded yet'}</pre>
       </div>
       
       <div className="dev-section">

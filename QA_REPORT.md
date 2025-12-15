@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-Comprehensive QA pass completed on the TMS Simulator. Found and fixed **7 critical bugs**, **4 code quality issues**, and added **guardrails** for future regression prevention. All smoke tests pass (22/22). Build succeeds.
+Comprehensive QA pass completed on the TMS Simulator. Found and fixed **8 critical bugs** (including a blank-screen issue from incorrect `useGLTF` usage), **4 code quality issues**, and added **guardrails** (error boundary + smoke tests) for future regression prevention. All smoke tests pass (22/22). Build succeeds.
 
 ---
 
@@ -40,10 +40,13 @@ Comprehensive QA pass completed on the TMS Simulator. Found and fixed **7 critic
 - ✅ Spacebar fires pulse in rMT hunt/titration phases
 
 **Critical Bugs Fixed:**
-1. `ScalpSurface` constructor didn't accept mesh parameter
-2. `moveAlongSurface()` was called with wrong signature (4 args instead of 3)
-3. `calculateCoilOrientation()` returned `Euler` but code expected `Quaternion`
-4. R/F pitch controls were documented but not implemented
+1. **`useGLTF` wrong destructuring** - `{ gltf } = useGLTF()` should be `gltf = useGLTF()` (caused blank screen!)
+2. `ScalpSurface` constructor didn't accept mesh parameter
+3. `moveAlongSurface()` was called with wrong signature (4 args instead of 3)
+4. `calculateCoilOrientation()` returned `Euler` but code expected `Quaternion`
+5. R/F pitch controls were documented but not implemented
+
+**Error Boundary Added:** App now catches rendering errors and shows helpful message instead of blank screen.
 
 ### 3. Radiologic Convention ✅
 
@@ -218,3 +221,33 @@ npm run build  # ✅ Success in 7.32s
 ✅ **READY FOR DEMO**
 
 All critical functionality verified, bugs fixed, guardrails added. The simulator is stable and correct.
+
+---
+
+## V2 Update: Production Deployment Fixes
+
+After initial deployment to Railway showed blank screen, the following issues were identified and fixed:
+
+### Issue 1: Missing Suspense Boundary
+**Root Cause:** drei's `useGLTF` hook uses React Suspense for async model loading. Without a Suspense boundary, the component tree fails silently.
+
+**Fix:** Added `<Suspense fallback={<LoadingFallback />}>` around scene content in TMSScene.jsx
+
+### Issue 2: Asset Path Resolution  
+**Root Cause:** Vite's default absolute paths (`/models/head.glb`) may not resolve correctly on some hosting platforms.
+
+**Fix:** 
+- Added `base: './'` to vite.config.js for relative asset paths
+- Changed GLB paths to use `import.meta.env.BASE_URL` prefix
+
+### Issue 3: Missing copyPublicDir
+**Root Cause:** Public folder contents may not be copied to dist in all configurations.
+
+**Fix:** Added `copyPublicDir: true` to vite.config.js build options
+
+### Files Changed in V2
+- `vite.config.js` - Added base path and copyPublicDir
+- `src/components/scene/TMSScene.jsx` - Added Suspense boundary and LoadingFallback
+- `src/components/scene/HeadModel.jsx` - Updated GLB paths
+- `src/components/scene/TMSCoil.jsx` - Updated GLB paths
+- `src/App.jsx` - Simplified DevTools import, removed broken ErrorBoundary

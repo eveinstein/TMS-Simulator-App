@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "start": "serve dist -s -l $PORT",
     "test:smoke": "node src/engine/__tests__/mtTraining.test.js",
     "lint": "echo 'Add eslint for full linting' && exit 0"
   },
@@ -16,7 +17,8 @@
     "@react-three/fiber": "^8.15.0",
     "@react-three/drei": "^9.88.0",
     "three": "^0.159.0",
-    "zustand": "^4.4.0"
+    "zustand": "^4.4.0",
+    "serve": "^14.2.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.0",

@@ -81,7 +81,7 @@ export function HeadModel({ onHeadMeshReady, onTargetClick, selectedTarget }) {
   const groupRef = useRef();
   const headMeshRef = useRef();
   
-  const { gltf } = useGLTF('/models/head.glb');
+  const gltf = useGLTF(`${import.meta.env.BASE_URL}models/head.glb`);
   const { setTargetPositions } = useTMSStore();
   
   // Clone and process the model
@@ -188,4 +188,10 @@ export function HeadModel({ onHeadMeshReady, onTargetClick, selectedTarget }) {
 }
 
 // Preload the model
-useGLTF.preload('/models/head.glb');
+// Preload is called at module load time, so we need to handle the path carefully
+// Using empty string as base URL since import.meta.env.BASE_URL might not be available at parse time
+try {
+  useGLTF.preload(`${import.meta.env.BASE_URL || './'}models/head.glb`);
+} catch (e) {
+  // Preload failure is not critical
+}

@@ -43,6 +43,8 @@ export function MachinePanel() {
     unlockCoil,
     nearestTarget,
     setNearestTarget,
+    selectedTargetKey,
+    setSelectedTargetKey,
   } = useTMSStore();
   
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -322,6 +324,23 @@ export function MachinePanel() {
       {/* Coil Position */}
       <div className="panel-section">
         <div className="section-title">Coil Position</div>
+        
+        {/* Target Selector - click to snap coil */}
+        <div className="target-selector">
+          <label>Snap to Target:</label>
+          <select
+            value={selectedTargetKey || ''}
+            onChange={(e) => setSelectedTargetKey(e.target.value || null)}
+            disabled={session.isRunning}
+          >
+            <option value="">— Select Target —</option>
+            <option value="F3">F3 - Left DLPFC</option>
+            <option value="F4">F4 - Right DLPFC</option>
+            <option value="FP2">FP2 - Right OFC</option>
+            <option value="C3">C3 - Left Motor</option>
+            <option value="SMA">SMA</option>
+          </select>
+        </div>
         
         <div className="position-display">
           {nearestTarget?.name ? (

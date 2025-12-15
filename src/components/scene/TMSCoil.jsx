@@ -25,6 +25,7 @@ import {
   clampPitch,
   MOVEMENT_CONFIG 
 } from '../../utils/surfaceMovement';
+import { clampToProxyBoundary } from '../../utils/coilSurfaceProxy';
 import * as THREE from 'three';
 
 // Pulse ring animation component
@@ -139,10 +140,13 @@ function validateCoilScale(coilObject) {
   }
 }
 
-export function TMSCoil({ headMesh, onCoilMove }) {
+export function TMSCoil({ headMesh, coilSurfaceMesh, onCoilMove }) {
   const groupRef = useRef();
   const coilRef = useRef();
   const scalpSurfaceRef = useRef(null);
+  
+  // Track which mesh we're using for raycasting
+  const [surfaceMeshReady, setSurfaceMeshReady] = useState(false);
   
   // FIX F: Store effective scalp offset based on coil thickness
   const [effectiveOffset, setEffectiveOffset] = useState(MOVEMENT_CONFIG.scalpOffset);
@@ -175,6 +179,8 @@ export function TMSCoil({ headMesh, onCoilMove }) {
     session,
     rmt,
     firePulse,
+    selectedTargetKey,
+    targetPositions,
   } = useTMSStore();
   
   // Clone and process the coil model
@@ -212,38 +218,63 @@ export function TMSCoil({ headMesh, onCoilMove }) {
     }
   }, [clonedScene]);
   
-  // Initialize scalp surface when head mesh is ready
+  // Initialize scalp surface - prefer proxy mesh for smooth movement
   useEffect(() => {
-    if (headMesh && !scalpSurfaceRef.current) {
-      headMesh.updateMatrixWorld(true);
-      scalpSurfaceRef.current = new ScalpSurface(headMesh);
-      
-      if (import.meta.env.DEV) {
-        console.log('[TMSCoil] ScalpSurface initialized');
-      }
-      
-      // Initial snap to surface - target top of scalp (not face)
-      const startPos = new THREE.Vector3(0, 0.2, -0.02);
-      const initial = scalpSurfaceRef.current.findClosestSurfacePoint(startPos);
-      if (initial) {
-        coilStateRef.current.position.copy(initial.point);
-        coilStateRef.current.position.add(
-          initial.normal.clone().multiplyScalar(effectiveOffset)
-        );
-        coilStateRef.current.normal.copy(initial.normal);
-        updateCoilTransform();
-        
-        if (import.meta.env.DEV) {
-          console.log('[TMSCoil] Initial position (outer scalp):', {
-            x: coilStateRef.current.position.x.toFixed(4),
-            y: coilStateRef.current.position.y.toFixed(4),
-            z: coilStateRef.current.position.z.toFixed(4),
-            isOutermost: initial.isOutermost,
-          });
-        }
+    // Use proxy mesh if available, otherwise fall back to headMesh
+    const targetMesh = coilSurfaceMesh || headMesh;
+    
+    if (!targetMesh) return;
+    
+    // If we already have a surface and it's using the same mesh type, skip
+    if (scalpSurfaceRef.current && surfaceMeshReady) {
+      // Only reinitialize if we're switching to proxy for first time
+      if (coilSurfaceMesh && !scalpSurfaceRef.current._usingProxy) {
+        // Upgrade to proxy mesh
+      } else {
+        return;
       }
     }
-  }, [headMesh, effectiveOffset]);
+    
+    targetMesh.updateMatrixWorld(true);
+    scalpSurfaceRef.current = new ScalpSurface(targetMesh);
+    scalpSurfaceRef.current._usingProxy = !!coilSurfaceMesh;
+    
+    if (import.meta.env.DEV) {
+      console.log('[TMSCoil] ScalpSurface initialized:', {
+        usingProxy: !!coilSurfaceMesh,
+        meshName: targetMesh.name || 'unnamed',
+      });
+    }
+    
+    // Initial snap to surface - target top of scalp (not face)
+    const startPos = new THREE.Vector3(0, 0.2, -0.02);
+    const initial = scalpSurfaceRef.current.findClosestSurfacePoint(startPos);
+    if (initial) {
+      coilStateRef.current.position.copy(initial.point);
+      coilStateRef.current.position.add(
+        initial.normal.clone().multiplyScalar(effectiveOffset)
+      );
+      coilStateRef.current.normal.copy(initial.normal);
+      
+      // Clamp to proxy boundary if using proxy
+      if (coilSurfaceMesh) {
+        clampToProxyBoundary(coilStateRef.current.position, coilSurfaceMesh);
+      }
+      
+      updateCoilTransform();
+      
+      if (import.meta.env.DEV) {
+        console.log('[TMSCoil] Initial position:', {
+          x: coilStateRef.current.position.x.toFixed(4),
+          y: coilStateRef.current.position.y.toFixed(4),
+          z: coilStateRef.current.position.z.toFixed(4),
+          isOutermost: initial.isOutermost,
+        });
+      }
+    }
+    
+    setSurfaceMeshReady(true);
+  }, [headMesh, coilSurfaceMesh, effectiveOffset, surfaceMeshReady]);
   
   const updateCoilTransform = useCallback(() => {
     const state = coilStateRef.current;
@@ -254,6 +285,42 @@ export function TMSCoil({ headMesh, onCoilMove }) {
     
     onCoilMove?.(state.position, state.normal);
   }, [setCoilPosition, setCoilRotation, onCoilMove]);
+  
+  // Snap coil to selected target when selectedTargetKey changes
+  useEffect(() => {
+    if (!selectedTargetKey || !targetPositions || !scalpSurfaceRef.current) return;
+    
+    const targetPos = targetPositions[selectedTargetKey];
+    if (!targetPos) {
+      if (import.meta.env.DEV) {
+        console.warn('[TMSCoil] Target not found:', selectedTargetKey);
+      }
+      return;
+    }
+    
+    // Snap to the target position
+    const result = scalpSurfaceRef.current.snapToTarget(targetPos, effectiveOffset);
+    if (result) {
+      coilStateRef.current.position.copy(result.position);
+      coilStateRef.current.normal.copy(result.normal);
+      coilStateRef.current.yaw = 0; // Reset rotation
+      coilStateRef.current.pitch = 0;
+      
+      // Clamp to proxy boundary if using proxy
+      if (coilSurfaceMesh) {
+        clampToProxyBoundary(coilStateRef.current.position, coilSurfaceMesh);
+      }
+      
+      updateCoilTransform();
+      
+      if (import.meta.env.DEV) {
+        console.log('[TMSCoil] Snapped to target:', {
+          target: selectedTargetKey,
+          position: result.position.toArray().map(v => v.toFixed(4)),
+        });
+      }
+    }
+  }, [selectedTargetKey, targetPositions, effectiveOffset, coilSurfaceMesh, updateCoilTransform]);
   
   // Keyboard event handlers
   useEffect(() => {
@@ -318,6 +385,12 @@ export function TMSCoil({ headMesh, onCoilMove }) {
       if (result) {
         state.position.copy(result.position);
         state.normal.copy(result.normal);
+        
+        // Clamp to proxy boundary if using proxy
+        if (coilSurfaceMesh) {
+          clampToProxyBoundary(state.position, coilSurfaceMesh);
+        }
+        
         moved = true;
       }
     }
@@ -385,6 +458,12 @@ export function TMSCoil({ headMesh, onCoilMove }) {
           result.normal.clone().multiplyScalar(effectiveOffset)
         );
         coilStateRef.current.normal.copy(result.normal);
+        
+        // Clamp to proxy boundary if using proxy
+        if (coilSurfaceMesh) {
+          clampToProxyBoundary(coilStateRef.current.position, coilSurfaceMesh);
+        }
+        
         updateCoilTransform();
       }
     };
@@ -396,7 +475,7 @@ export function TMSCoil({ headMesh, onCoilMove }) {
     
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
-  }, [camera, gl, isCoilLocked, updateCoilTransform, effectiveOffset]);
+  }, [camera, gl, isCoilLocked, updateCoilTransform, effectiveOffset, coilSurfaceMesh]);
   
   const isPulsing = session.isRunning && !session.isPaused;
   

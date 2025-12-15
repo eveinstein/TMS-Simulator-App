@@ -264,9 +264,11 @@ export const useTMSStore = create((set, get) => ({
   // ============================================================================
   targetPositions: null, // Will be set when head model loads
   nearestTarget: null,
+  selectedTargetKey: null, // Currently selected EEG target (F3, F4, FP2, SMA, C3)
   
   setTargetPositions: (positions) => set({ targetPositions: positions }),
   setNearestTarget: (target) => set({ nearestTarget: target }),
+  setSelectedTargetKey: (key) => set({ selectedTargetKey: key }),
   
   // ============================================================================
   // RMT TRAINING STATE - Grouped object

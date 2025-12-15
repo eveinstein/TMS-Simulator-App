@@ -155,14 +155,14 @@ W: ${coilRotation[3].toFixed(4)}` : 'Not set'}</pre>
 }
 
 function App() {
-  const { mode, setMode } = useTMSStore();
-  const [selectedTarget, setSelectedTarget] = useState(null);
+  const { mode, setMode, selectedTargetKey, setSelectedTargetKey } = useTMSStore();
   const [showPopup, setShowPopup] = useState(null);
   
   const handleTargetClick = useCallback((name) => {
-    setSelectedTarget(name);
+    // Update store - this triggers coil snap in TMSCoil
+    setSelectedTargetKey(name);
     setShowPopup(name);
-  }, []);
+  }, [setSelectedTargetKey]);
   
   const handleClosePopup = useCallback(() => {
     setShowPopup(null);
@@ -201,7 +201,7 @@ function App() {
         <div className="scene-container">
           <TMSScene 
             onTargetClick={handleTargetClick}
-            selectedTarget={selectedTarget}
+            selectedTarget={selectedTargetKey}
           />
         </div>
         

@@ -111,14 +111,15 @@ export class ScalpSurface {
   
   /**
    * FIX A: Find closest point on scalp surface to a world position
-   * - Picks the OUTERMOST (farthest) intersection, not intersects[0]
-   * - Ensures normal points OUTWARD relative to head center
-   * - Falls back to reverse ray if center-out fails
+   * - Uses local ray projection first (more stable near edges)
+   * - Falls back to center-out ray
+   * - FIX B: Uses continuity-based hit selection (closest to previous point)
    * 
    * @param {THREE.Vector3} worldPos - Target position in world space
+   * @param {THREE.Vector3} [previousPoint] - Previous surface point for continuity
    * @returns {{ point: THREE.Vector3, normal: THREE.Vector3, distance: number, isOutermost: boolean } | null}
    */
-  findClosestSurfacePoint(worldPos) {
+  findClosestSurfacePoint(worldPos, previousPoint = null) {
     if (!this.headMesh) return null;
     
     // Direction from head center to target
@@ -127,25 +128,72 @@ export class ScalpSurface {
     // Skip if direction is zero (target is at head center)
     if (direction.lengthSq() < 0.0001) return null;
     
-    // Cast ray from center outward
-    this.raycaster.set(this.headCenter, direction);
-    const intersects = this.raycaster.intersectObject(this.headMesh, true);
-    
     let hit = null;
     let isOutermost = false;
     
-    if (intersects.length > 0) {
-      // FIX A: Pick the OUTERMOST (farthest) intersection - this is the outer scalp surface
-      hit = intersects[intersects.length - 1];
-      isOutermost = true;
+    // FIX C: Try local ray projection first (more stable near edges)
+    // Ray from slightly above the target position, pointing down toward surface
+    if (previousPoint) {
+      const lastNormal = this._tempVec2.subVectors(previousPoint, this.headCenter).normalize();
+      const rayOrigin = this._tempVec3.copy(worldPos).add(lastNormal.clone().multiplyScalar(0.05));
+      const rayDir = lastNormal.clone().negate();
+      
+      this.raycaster.set(rayOrigin, rayDir);
+      // FIX A: Use recursive=false to avoid hitting child objects like fiducial spheres
+      const localIntersects = this.raycaster.intersectObject(this.headMesh, false);
+      
+      if (localIntersects.length > 0) {
+        // FIX B: Choose hit closest to previous point for continuity
+        let bestHit = localIntersects[0];
+        let bestDist = bestHit.point.distanceTo(previousPoint);
+        
+        for (let i = 1; i < localIntersects.length; i++) {
+          const dist = localIntersects[i].point.distanceTo(previousPoint);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestHit = localIntersects[i];
+          }
+        }
+        
+        hit = bestHit;
+        isOutermost = true;
+      }
     }
     
-    // FIX A: Fallback - if center-out ray fails, try reverse direction
+    // Fallback: Cast ray from center outward
+    if (!hit) {
+      this.raycaster.set(this.headCenter, direction);
+      // FIX A: Use recursive=false
+      const intersects = this.raycaster.intersectObject(this.headMesh, false);
+      
+      if (intersects.length > 0) {
+        if (previousPoint && intersects.length > 1) {
+          // FIX B: Choose hit closest to previous point for continuity
+          let bestHit = intersects[0];
+          let bestDist = bestHit.point.distanceTo(previousPoint);
+          
+          for (let i = 1; i < intersects.length; i++) {
+            const dist = intersects[i].point.distanceTo(previousPoint);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestHit = intersects[i];
+            }
+          }
+          hit = bestHit;
+        } else {
+          // No previous point: use outermost hit
+          hit = intersects[intersects.length - 1];
+        }
+        isOutermost = true;
+      }
+    }
+    
+    // Final fallback: reverse ray from worldPos toward headCenter
     if (!hit) {
       const reverseDir = this._tempVec2.subVectors(this.headCenter, worldPos).normalize();
       this.raycaster.set(worldPos, reverseDir);
       
-      const reverseIntersects = this.raycaster.intersectObject(this.headMesh, true);
+      const reverseIntersects = this.raycaster.intersectObject(this.headMesh, false);
       if (reverseIntersects.length > 0) {
         hit = reverseIntersects[0];
         isOutermost = false;
@@ -158,7 +206,7 @@ export class ScalpSurface {
       normal.transformDirection(this.headMesh.matrixWorld);
       normal.normalize();
       
-      // FIX A: Ensure normal points OUTWARD (away from head center)
+      // Ensure normal points OUTWARD (away from head center)
       this._outwardDir.subVectors(hit.point, this.headCenter).normalize();
       if (normal.dot(this._outwardDir) < 0) {
         normal.negate();
@@ -177,13 +225,15 @@ export class ScalpSurface {
   
   /**
    * Raycast from camera/mouse to find surface point
+   * FIX A: Uses recursive=false to avoid hitting fiducial spheres
    * @param {THREE.Raycaster} raycaster - Configured raycaster
    * @returns {{ point: THREE.Vector3, normal: THREE.Vector3 } | null}
    */
   raycastToSurface(raycaster) {
     if (!this.headMesh) return null;
     
-    const intersects = raycaster.intersectObject(this.headMesh, true);
+    // FIX A: Use recursive=false to only hit the surface mesh
+    const intersects = raycaster.intersectObject(this.headMesh, false);
     
     if (intersects.length > 0) {
       const hit = intersects[0];
@@ -208,6 +258,7 @@ export class ScalpSurface {
   
   /**
    * Move along scalp surface in a given direction
+   * FIX B: Uses continuity-based hit selection by passing previous point
    * 
    * @param {THREE.Vector3} currentWorldPos - Current coil position (world space)
    * @param {THREE.Vector3} moveDirection - Desired movement direction (normalized)
@@ -219,6 +270,7 @@ export class ScalpSurface {
     if (!this.headMesh) return null;
     if (moveDirection.lengthSq() < 0.0001) return null;
     
+    // Get current surface point (no previous point needed for first query)
     const current = this.findClosestSurfacePoint(currentWorldPos);
     if (!current) return null;
     
@@ -233,7 +285,10 @@ export class ScalpSurface {
     tangentMove.normalize().multiplyScalar(stepSize);
     
     const newTarget = this._tempVec3.copy(current.point).add(tangentMove);
-    const newSurface = this.findClosestSurfacePoint(newTarget);
+    
+    // FIX B: Pass current.point as previousPoint for continuity-based hit selection
+    // This prevents "teleport across midline" by choosing the hit closest to where we are
+    const newSurface = this.findClosestSurfacePoint(newTarget, current.point);
     if (!newSurface) return null;
     
     const finalPosition = newSurface.point.clone().add(

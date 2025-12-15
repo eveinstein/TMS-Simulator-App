@@ -11,12 +11,13 @@
  * - Hotspot visualization for rMT mode
  */
 
-import React, { useState, useCallback, useRef, useEffect, Suspense } from 'react';
+import React, { useState, useCallback, useRef, useEffect, Suspense, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, Html } from '@react-three/drei';
 import { HeadModel } from './HeadModel';
 import { TMSCoil } from './TMSCoil';
 import { useTMSStore } from '../../stores/tmsStore';
+import { buildCoilProxySurface } from '../../utils/coilSurfaceProxy';
 import * as THREE from 'three';
 
 // Loading fallback component for 3D scene
@@ -227,11 +228,33 @@ function SceneContent({
   onCoilUpdate,
 }) {
   const [headMesh, setHeadMesh] = useState(null);
+  const [fiducials, setFiducials] = useState(null);
+  const [coilSurfaceMesh, setCoilSurfaceMesh] = useState(null);
   const [coilPos, setCoilPos] = useState(null);
   const [nearestTarget, setNearestTarget] = useState({ name: null, distance: null });
   const controlsRef = useRef();
   
   const { targetPositions, mode, rmt } = useTMSStore();
+  
+  // Build proxy surface when headMesh and fiducials are both ready
+  useEffect(() => {
+    if (headMesh && fiducials && !coilSurfaceMesh) {
+      if (import.meta.env.DEV) {
+        console.log('[TMSScene] Building coil proxy surface...');
+      }
+      
+      const proxy = buildCoilProxySurface({
+        headMesh,
+        fiducials,
+        latSegments: 48,
+        lonSegments: 64,
+        offsetMm: 2,
+        smoothingIters: 8,
+      });
+      
+      setCoilSurfaceMesh(proxy);
+    }
+  }, [headMesh, fiducials, coilSurfaceMesh]);
   
   // Calculate nearest target when coil moves
   const handleCoilMove = useCallback((position, normal) => {
@@ -273,13 +296,18 @@ function SceneContent({
       {/* Head model */}
       <HeadModel 
         onHeadMeshReady={setHeadMesh}
+        onFiducialsReady={setFiducials}
         onTargetClick={onTargetClick}
         selectedTarget={selectedTarget}
       />
       
-      {/* TMS Coil */}
+      {/* Coil proxy surface (invisible in prod, wireframe in dev) */}
+      {coilSurfaceMesh && <primitive object={coilSurfaceMesh} />}
+      
+      {/* TMS Coil - uses proxy surface for smooth movement */}
       <TMSCoil 
         headMesh={headMesh}
+        coilSurfaceMesh={coilSurfaceMesh}
         onCoilMove={handleCoilMove}
       />
       

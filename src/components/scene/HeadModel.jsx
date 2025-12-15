@@ -77,7 +77,7 @@ function TargetMarker({ position, name, info, onClick, isSelected }) {
   );
 }
 
-export function HeadModel({ onHeadMeshReady, onTargetClick, selectedTarget }) {
+export function HeadModel({ onHeadMeshReady, onFiducialsReady, onTargetClick, selectedTarget }) {
   const groupRef = useRef();
   const headMeshRef = useRef();
   
@@ -166,6 +166,16 @@ export function HeadModel({ onHeadMeshReady, onTargetClick, selectedTarget }) {
       onHeadMeshReady?.(headMesh);
     }
   }, [headMesh, onHeadMeshReady]);
+  
+  // Notify parent when fiducials are extracted
+  useEffect(() => {
+    if (Object.keys(fiducials).length > 0) {
+      onFiducialsReady?.(fiducials);
+      if (import.meta.env.DEV) {
+        console.log('[HeadModel] Fiducials extracted:', Object.keys(fiducials));
+      }
+    }
+  }, [fiducials, onFiducialsReady]);
   
   return (
     <group ref={groupRef}>

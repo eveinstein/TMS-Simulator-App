@@ -229,20 +229,20 @@ function SceneContent({
 }) {
   const [headMesh, setHeadMesh] = useState(null);
   const [fiducials, setFiducials] = useState(null);
-  const [coilSurfaceMesh, setCoilSurfaceMesh] = useState(null);
+  const [proxyMesh, setProxyMesh] = useState(null);
   const [coilPos, setCoilPos] = useState(null);
   const [nearestTarget, setNearestTarget] = useState({ name: null, distance: null });
   const controlsRef = useRef();
   
   const { targetPositions, mode, rmt } = useTMSStore();
   
-  // Build proxy surface when headMesh and fiducials are both ready
+  // Build smooth proxy surface when headMesh and fiducials are ready
   useEffect(() => {
-    if (headMesh && fiducials && !coilSurfaceMesh) {
-      if (import.meta.env.DEV) {
-        console.log('[TMSScene] Building coil proxy surface...');
-      }
-      
+    if (!headMesh || !fiducials || proxyMesh) return;
+    
+    console.log('[TMSScene] Building smooth proxy surface...');
+    
+    try {
       const proxy = buildCoilProxySurface({
         headMesh,
         fiducials,
@@ -252,9 +252,19 @@ function SceneContent({
         smoothingIters: 8,
       });
       
-      setCoilSurfaceMesh(proxy);
+      // Make proxy visible in dev mode for debugging
+      if (import.meta.env.DEV) {
+        proxy.visible = true;
+        proxy.material.opacity = 0.1;
+        proxy.material.wireframe = true;
+      }
+      
+      setProxyMesh(proxy);
+      console.log('[TMSScene] Proxy surface built successfully');
+    } catch (err) {
+      console.error('[TMSScene] Failed to build proxy surface:', err);
     }
-  }, [headMesh, fiducials, coilSurfaceMesh]);
+  }, [headMesh, fiducials, proxyMesh]);
   
   // Calculate nearest target when coil moves
   const handleCoilMove = useCallback((position, normal) => {
@@ -301,15 +311,16 @@ function SceneContent({
         selectedTarget={selectedTarget}
       />
       
-      {/* Coil proxy surface (invisible in prod, wireframe in dev) */}
-      {coilSurfaceMesh && <primitive object={coilSurfaceMesh} />}
+      {/* Proxy surface for smooth coil movement (visible in dev) */}
+      {proxyMesh && <primitive object={proxyMesh} />}
       
-      {/* TMS Coil - uses proxy surface for smooth movement */}
-      <TMSCoil 
-        headMesh={headMesh}
-        coilSurfaceMesh={coilSurfaceMesh}
-        onCoilMove={handleCoilMove}
-      />
+      {/* TMS Coil - REQUIRES proxy mesh for smooth movement */}
+      {proxyMesh && (
+        <TMSCoil 
+          proxyMesh={proxyMesh}
+          onCoilMove={handleCoilMove}
+        />
+      )}
       
       {/* UI Overlays */}
       <AxisIndicator />

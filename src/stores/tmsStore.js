@@ -265,10 +265,12 @@ export const useTMSStore = create((set, get) => ({
   targetPositions: null, // Will be set when head model loads
   nearestTarget: null,
   selectedTargetKey: null, // Currently selected EEG target (F3, F4, FP2, SMA, C3)
+  coilResetTrigger: 0, // Increment to trigger coil reset
   
   setTargetPositions: (positions) => set({ targetPositions: positions }),
   setNearestTarget: (target) => set({ nearestTarget: target }),
   setSelectedTargetKey: (key) => set({ selectedTargetKey: key }),
+  resetCoilPosition: () => set(state => ({ coilResetTrigger: state.coilResetTrigger + 1 })),
   
   // ============================================================================
   // RMT TRAINING STATE - Grouped object

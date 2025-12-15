@@ -1,362 +1,296 @@
 /**
  * Surface Movement Utility
  * ========================
- * Implements scalp-constrained coil movement using raycasting.
+ * Scalp-constrained coil movement using raycasting against a smooth proxy surface.
  * 
- * FIXES APPLIED:
- * - Fix A: findClosestSurfacePoint picks OUTERMOST hit, forces outward normals, has fallback
- * - Fix B: setHeadMesh uses bounding sphere center (more stable than bbox)
- * - Fix C: keysToMoveDirection accepts surfaceNormal and projects onto tangent plane
- * - Fix D: Movement uses units/second, scaled by delta time
+ * Architecture:
+ * - ScalpSurface wraps a single THREE.Mesh (the proxy dome)
+ * - Raycasts from head center outward to find surface points
+ * - Uses continuity-based hit selection to prevent teleporting
+ * - All normals forced to point outward
+ * 
+ * Terminology:
+ * - surfaceMesh: The smooth proxy dome mesh used for raycasting
+ * - targetKey: EEG electrode name (F3, F4, C3, SMA, FP2)
+ * - fiducial: Anatomical landmark (Nasion, Inion, LPA, RPA)
  */
 
 import * as THREE from 'three';
 
-// Movement configuration - single source of truth
-// FIX D: moveSpeed is now units per SECOND (not per frame)
+// Debug flag - set to true to enable verbose raycast logging
+const DEBUG_RAYCAST = false;
+
+// Movement configuration
 export const MOVEMENT_CONFIG = {
-  moveSpeed: 0.15,        // Units per second (world space)
+  moveSpeed: 0.15,        // Meters per second
   rotateSpeed: 1.8,       // Radians per second for yaw
   pitchSpeed: 0.9,        // Radians per second for pitch
-  scalpOffset: 0.006,     // Default distance above scalp surface (6mm)
-  snapThreshold: 0.015,   // Distance to snap to target (15mm)
+  scalpOffset: 0.006,     // Default hover distance above surface (6mm)
+  snapThreshold: 0.015,   // Distance to auto-snap to target (15mm)
   maxPitch: Math.PI / 6,  // ±30 degrees pitch limit
 };
 
 /**
- * ScalpSurface class - manages raycasting and surface-following logic
+ * ScalpSurface - Manages raycasting against a smooth proxy mesh
  */
 export class ScalpSurface {
-  /**
-   * @param {THREE.Mesh} [mesh] - Optional head mesh for raycasting
-   * @param {Object} [options] - Configuration options
-   * @param {THREE.Vector3} [options.headCenterOverride] - Manual head center override
-   */
-  constructor(mesh = null, options = {}) {
-    this.headMesh = null;
-    this.headCenter = new THREE.Vector3(0, 0.05, 0);
-    this.headCenterOverride = options.headCenterOverride || null;
+  constructor() {
+    this.surfaceMesh = null;
+    this.headCenter = new THREE.Vector3(0, 0.08, 0);
     this.raycaster = new THREE.Raycaster();
+    this.isReady = false;
     
-    // Reusable vectors to avoid per-frame allocations
+    // Track last known good position for continuity
+    this._lastSurfacePoint = null;
+    
+    // Reusable vectors (avoid allocations in hot paths)
+    this._direction = new THREE.Vector3();
     this._tempVec = new THREE.Vector3();
-    this._tempVec2 = new THREE.Vector3();
-    this._tempVec3 = new THREE.Vector3();
-    this._outwardDir = new THREE.Vector3();
-    
-    if (mesh) {
-      this.setHeadMesh(mesh);
-    }
+    this._farPoint = new THREE.Vector3();
   }
   
   /**
-   * FIX B: Manually set head center (for hard cases)
-   * @param {THREE.Vector3} center - The head center position in world space
+   * Initialize with the proxy surface mesh
+   * @param {THREE.Mesh} mesh - The smooth proxy dome mesh
    */
-  setHeadCenter(center) {
-    this.headCenterOverride = center.clone();
-    this.headCenter.copy(center);
-    
-    if (import.meta.env.DEV) {
-      console.log('[ScalpSurface] Manual head center set:', {
-        x: this.headCenter.x.toFixed(4),
-        y: this.headCenter.y.toFixed(4),
-        z: this.headCenter.z.toFixed(4),
-      });
+  setMesh(mesh) {
+    if (!mesh) {
+      console.error('[ScalpSurface] setMesh called with null');
+      return;
     }
-  }
-  
-  /**
-   * FIX B: Initialize or update head mesh reference using bounding sphere center
-   * @param {THREE.Mesh} mesh - The head mesh for raycasting
-   */
-  setHeadMesh(mesh) {
-    if (!mesh) return;
     
-    this.headMesh = mesh;
+    if (!mesh.geometry) {
+      console.error('[ScalpSurface] Mesh has no geometry');
+      return;
+    }
+    
+    this.surfaceMesh = mesh;
     mesh.updateMatrixWorld(true);
     
-    // If manual override is set, use it
-    if (this.headCenterOverride) {
-      this.headCenter.copy(this.headCenterOverride);
-    } else if (mesh.geometry) {
-      // FIX B: Use bounding sphere center (more stable than bbox for open meshes)
-      mesh.geometry.computeBoundingSphere();
-      const sphere = mesh.geometry.boundingSphere;
-      
-      if (sphere) {
-        this._tempVec.copy(sphere.center);
-        this._tempVec.applyMatrix4(mesh.matrixWorld);
-        this.headCenter.copy(this._tempVec);
-      } else {
-        // Fallback to bounding box if sphere fails
-        mesh.geometry.computeBoundingBox();
-        const box = mesh.geometry.boundingBox;
-        if (box) {
-          box.getCenter(this._tempVec);
-          this._tempVec.applyMatrix4(mesh.matrixWorld);
-          this.headCenter.copy(this._tempVec);
-        }
-      }
+    // Compute head center from bounding sphere
+    mesh.geometry.computeBoundingSphere();
+    const sphere = mesh.geometry.boundingSphere;
+    if (sphere) {
+      this.headCenter.copy(sphere.center);
+      this.headCenter.applyMatrix4(mesh.matrixWorld);
     }
     
-    if (import.meta.env.DEV) {
-      console.log('[ScalpSurface] Initialized with head center (bounding sphere):', {
-        x: this.headCenter.x.toFixed(4),
-        y: this.headCenter.y.toFixed(4),
-        z: this.headCenter.z.toFixed(4),
-      });
-    }
+    this.isReady = true;
+    this._lastSurfacePoint = null;
+    
+    console.log('[ScalpSurface] Initialized:', {
+      meshName: mesh.name || 'unnamed',
+      headCenter: this.headCenter.toArray().map(v => v.toFixed(4)),
+      radius: sphere?.radius?.toFixed(4) || 'unknown',
+    });
   }
   
   /**
-   * FIX A: Find closest point on scalp surface to a world position
-   * - Uses local ray projection first (more stable near edges)
-   * - Falls back to center-out ray
-   * - FIX B: Uses continuity-based hit selection (closest to previous point)
-   * - Filters out small meshes (fiducial spheres) from hits
+   * Find surface point closest to a world position
+   * Uses continuity-based selection to prevent teleporting
    * 
-   * @param {THREE.Vector3} worldPos - Target position in world space
+   * @param {THREE.Vector3} targetPos - Position to find surface for
    * @param {THREE.Vector3} [previousPoint] - Previous surface point for continuity
-   * @returns {{ point: THREE.Vector3, normal: THREE.Vector3, distance: number, isOutermost: boolean } | null}
-   */
-  findClosestSurfacePoint(worldPos, previousPoint = null) {
-    if (!this.headMesh) return null;
-    
-    // Direction from head center to target
-    const direction = this._tempVec.subVectors(worldPos, this.headCenter).normalize();
-    
-    // Skip if direction is zero (target is at head center)
-    if (direction.lengthSq() < 0.0001) return null;
-    
-    // Helper to filter out fiducial spheres (small meshes)
-    const filterHits = (intersects) => {
-      return intersects.filter(hit => {
-        // Skip if no geometry
-        if (!hit.object.geometry) return false;
-        // Skip small spheres (fiducials are ~0.004m radius)
-        hit.object.geometry.computeBoundingSphere();
-        const radius = hit.object.geometry.boundingSphere?.radius || 0;
-        if (radius < 0.01) return false; // Skip meshes smaller than 1cm
-        return true;
-      });
-    };
-    
-    let hit = null;
-    let isOutermost = false;
-    
-    // FIX C: Try local ray projection first (more stable near edges)
-    if (previousPoint) {
-      const lastNormal = this._tempVec2.subVectors(previousPoint, this.headCenter).normalize();
-      const rayOrigin = this._tempVec3.copy(worldPos).add(lastNormal.clone().multiplyScalar(0.05));
-      const rayDir = lastNormal.clone().negate();
-      
-      this.raycaster.set(rayOrigin, rayDir);
-      const localIntersects = filterHits(this.raycaster.intersectObject(this.headMesh, true));
-      
-      if (localIntersects.length > 0) {
-        // FIX B: Choose hit closest to previous point for continuity
-        let bestHit = localIntersects[0];
-        let bestDist = bestHit.point.distanceTo(previousPoint);
-        
-        for (let i = 1; i < localIntersects.length; i++) {
-          const dist = localIntersects[i].point.distanceTo(previousPoint);
-          if (dist < bestDist) {
-            bestDist = dist;
-            bestHit = localIntersects[i];
-          }
-        }
-        
-        hit = bestHit;
-        isOutermost = true;
-      }
-    }
-    
-    // Fallback: Cast ray from center outward
-    if (!hit) {
-      this.raycaster.set(this.headCenter, direction);
-      const intersects = filterHits(this.raycaster.intersectObject(this.headMesh, true));
-      
-      if (intersects.length > 0) {
-        if (previousPoint && intersects.length > 1) {
-          // FIX B: Choose hit closest to previous point for continuity
-          let bestHit = intersects[0];
-          let bestDist = bestHit.point.distanceTo(previousPoint);
-          
-          for (let i = 1; i < intersects.length; i++) {
-            const dist = intersects[i].point.distanceTo(previousPoint);
-            if (dist < bestDist) {
-              bestDist = dist;
-              bestHit = intersects[i];
-            }
-          }
-          hit = bestHit;
-        } else {
-          // No previous point: use outermost hit
-          hit = intersects[intersects.length - 1];
-        }
-        isOutermost = true;
-      }
-    }
-    
-    // Final fallback: reverse ray from worldPos toward headCenter
-    if (!hit) {
-      const reverseDir = this._tempVec2.subVectors(this.headCenter, worldPos).normalize();
-      this.raycaster.set(worldPos, reverseDir);
-      
-      const reverseIntersects = filterHits(this.raycaster.intersectObject(this.headMesh, true));
-      if (reverseIntersects.length > 0) {
-        hit = reverseIntersects[0];
-        isOutermost = false;
-      }
-    }
-    
-    if (hit) {
-      // Get face normal in world space
-      const normal = hit.face.normal.clone();
-      normal.transformDirection(hit.object.matrixWorld);
-      normal.normalize();
-      
-      // Ensure normal points OUTWARD (away from head center)
-      this._outwardDir.subVectors(hit.point, this.headCenter).normalize();
-      if (normal.dot(this._outwardDir) < 0) {
-        normal.negate();
-      }
-      
-      return {
-        point: hit.point.clone(),
-        normal: normal,
-        distance: hit.distance,
-        isOutermost: isOutermost,
-      };
-    }
-    
-    return null;
-  }
-  
-  /**
-   * Raycast from camera/mouse to find surface point
-   * Filters out small meshes (fiducial spheres)
-   * @param {THREE.Raycaster} raycaster - Configured raycaster
    * @returns {{ point: THREE.Vector3, normal: THREE.Vector3 } | null}
    */
-  raycastToSurface(raycaster) {
-    if (!this.headMesh) return null;
-    
-    const intersects = raycaster.intersectObject(this.headMesh, true);
-    
-    // Filter out small meshes (fiducials)
-    const filtered = intersects.filter(hit => {
-      if (!hit.object.geometry) return false;
-      hit.object.geometry.computeBoundingSphere();
-      const radius = hit.object.geometry.boundingSphere?.radius || 0;
-      return radius >= 0.01; // Only meshes >= 1cm
-    });
-    
-    if (filtered.length > 0) {
-      const hit = filtered[0];
-      const normal = hit.face.normal.clone();
-      normal.transformDirection(hit.object.matrixWorld);
-      normal.normalize();
-      
-      // Ensure normal points outward
-      this._outwardDir.subVectors(hit.point, this.headCenter).normalize();
-      if (normal.dot(this._outwardDir) < 0) {
-        normal.negate();
-      }
-      
-      return {
-        point: hit.point.clone(),
-        normal: normal,
-      };
+  findSurfacePoint(targetPos, previousPoint = null) {
+    if (!this.isReady || !this.surfaceMesh) {
+      if (DEBUG_RAYCAST) console.warn('[ScalpSurface] Not ready');
+      return null;
     }
     
-    return null;
+    // Direction from head center to target
+    this._direction.subVectors(targetPos, this.headCenter);
+    const distToCenter = this._direction.length();
+    
+    if (distToCenter < 0.001) {
+      if (DEBUG_RAYCAST) console.warn('[ScalpSurface] Target at head center');
+      return null;
+    }
+    
+    this._direction.normalize();
+    
+    // Primary raycast: from head center outward
+    this.raycaster.set(this.headCenter, this._direction);
+    let intersects = this.raycaster.intersectObject(this.surfaceMesh, false);
+    
+    if (DEBUG_RAYCAST && intersects.length > 0) {
+      console.log('[Raycast] Center-out hits:', intersects.length);
+    }
+    
+    // If no hits, try reverse ray (from outside looking in)
+    if (intersects.length === 0) {
+      this._farPoint.copy(this.headCenter).addScaledVector(this._direction, 0.5);
+      this._tempVec.copy(this._direction).negate();
+      this.raycaster.set(this._farPoint, this._tempVec);
+      intersects = this.raycaster.intersectObject(this.surfaceMesh, false);
+      
+      if (DEBUG_RAYCAST && intersects.length > 0) {
+        console.log('[Raycast] Reverse ray hits:', intersects.length);
+      }
+      
+      if (intersects.length === 0) {
+        if (DEBUG_RAYCAST) console.warn('[ScalpSurface] No surface hit');
+        return null;
+      }
+      
+      // For reverse ray, use first (closest) hit
+      return this._processHit(intersects[0]);
+    }
+    
+    // Select best hit using continuity
+    const hit = this._selectBestHit(intersects, previousPoint);
+    return this._processHit(hit);
   }
   
   /**
-   * Move along scalp surface in a given direction
-   * FIX B: Uses continuity-based hit selection by passing previous point
-   * 
-   * @param {THREE.Vector3} currentWorldPos - Current coil position (world space)
-   * @param {THREE.Vector3} moveDirection - Desired movement direction (normalized)
-   * @param {number} [stepSize] - Movement magnitude (delta-adjusted)
-   * @param {number} [offset] - Distance above scalp
-   * @returns {{ position: THREE.Vector3, normal: THREE.Vector3, surfacePoint: THREE.Vector3 } | null}
+   * Select the best hit from multiple intersections
+   * Prefers hit closest to previousPoint for smooth movement
+   * Falls back to outermost hit if no previous point
    */
-  moveAlongSurface(currentWorldPos, moveDirection, stepSize = MOVEMENT_CONFIG.moveSpeed * 0.016, offset = MOVEMENT_CONFIG.scalpOffset) {
-    if (!this.headMesh) return null;
-    if (moveDirection.lengthSq() < 0.0001) return null;
+  _selectBestHit(intersects, previousPoint) {
+    if (intersects.length === 1) {
+      return intersects[0];
+    }
     
-    // Get current surface point (no previous point needed for first query)
-    const current = this.findClosestSurfacePoint(currentWorldPos);
+    // Use continuity if we have a previous point
+    const refPoint = previousPoint || this._lastSurfacePoint;
+    
+    if (refPoint) {
+      let bestHit = intersects[0];
+      let bestDist = bestHit.point.distanceTo(refPoint);
+      
+      for (let i = 1; i < intersects.length; i++) {
+        const dist = intersects[i].point.distanceTo(refPoint);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestHit = intersects[i];
+        }
+      }
+      
+      if (DEBUG_RAYCAST) {
+        console.log('[ScalpSurface] Continuity selection:', {
+          hits: intersects.length,
+          selectedDist: bestDist.toFixed(4),
+        });
+      }
+      
+      return bestHit;
+    }
+    
+    // No reference point: use outermost hit (last in array, farthest from origin)
+    return intersects[intersects.length - 1];
+  }
+  
+  /**
+   * Process a raycast hit into surface point + outward normal
+   */
+  _processHit(hit) {
+    // Get face normal in world space
+    const normal = hit.face.normal.clone();
+    normal.transformDirection(this.surfaceMesh.matrixWorld);
+    normal.normalize();
+    
+    // Force normal to point outward (away from head center)
+    this._tempVec.subVectors(hit.point, this.headCenter).normalize();
+    if (normal.dot(this._tempVec) < 0) {
+      normal.negate();
+    }
+    
+    // Update last known good point
+    this._lastSurfacePoint = hit.point.clone();
+    
+    return {
+      point: hit.point.clone(),
+      normal: normal,
+    };
+  }
+  
+  /**
+   * Move along surface in a direction
+   * @param {THREE.Vector3} currentPos - Current coil position (with offset)
+   * @param {THREE.Vector3} moveDir - Desired movement direction (normalized)
+   * @param {number} stepSize - Distance to move (delta-scaled)
+   * @param {number} offset - Hover distance above surface
+   */
+  moveAlongSurface(currentPos, moveDir, stepSize, offset = MOVEMENT_CONFIG.scalpOffset) {
+    if (!this.isReady) return null;
+    if (moveDir.lengthSq() < 0.0001) return null;
+    
+    // Find current surface point (use continuity)
+    const current = this.findSurfacePoint(currentPos, this._lastSurfacePoint);
     if (!current) return null;
     
     // Project movement onto tangent plane
-    const normalComponent = this._tempVec.copy(current.normal).multiplyScalar(
-      moveDirection.dot(current.normal)
-    );
-    const tangentMove = this._tempVec2.copy(moveDirection).sub(normalComponent);
+    const normalDot = moveDir.dot(current.normal);
+    this._tempVec.copy(current.normal).multiplyScalar(normalDot);
+    const tangentMove = this._direction.copy(moveDir).sub(this._tempVec);
     
     if (tangentMove.lengthSq() < 0.0001) return null;
     
     tangentMove.normalize().multiplyScalar(stepSize);
     
-    const newTarget = this._tempVec3.copy(current.point).add(tangentMove);
+    // Compute new target and find its surface point (with continuity)
+    const newTarget = this._tempVec.copy(current.point).add(tangentMove);
+    const newSurface = this.findSurfacePoint(newTarget, current.point);
     
-    // FIX B: Pass current.point as previousPoint for continuity-based hit selection
-    // This prevents "teleport across midline" by choosing the hit closest to where we are
-    const newSurface = this.findClosestSurfacePoint(newTarget, current.point);
     if (!newSurface) return null;
     
-    const finalPosition = newSurface.point.clone().add(
-      newSurface.normal.clone().multiplyScalar(offset)
-    );
+    // Final position = surface point + offset along normal
+    const finalPos = newSurface.point.clone();
+    finalPos.addScaledVector(newSurface.normal, offset);
     
     return {
-      position: finalPosition,
+      position: finalPos,
       normal: newSurface.normal,
       surfacePoint: newSurface.point,
     };
   }
   
   /**
-   * Snap to a target position on the scalp
+   * Snap directly to a target position
    */
-  snapToTarget(targetWorldPos, offset = MOVEMENT_CONFIG.scalpOffset) {
-    console.log('[ScalpSurface] snapToTarget called:', {
-      targetWorldPos: targetWorldPos?.toArray?.() || targetWorldPos,
-      offset,
-      hasHeadMesh: !!this.headMesh,
-    });
-    
-    const surface = this.findClosestSurfacePoint(targetWorldPos);
-    if (!surface) {
-      console.warn('[ScalpSurface] findClosestSurfacePoint returned null');
+  snapToTarget(targetPos, offset = MOVEMENT_CONFIG.scalpOffset) {
+    if (!this.isReady) {
+      console.warn('[ScalpSurface] Not ready for snap');
       return null;
     }
     
-    const finalPosition = surface.point.clone().add(
-      surface.normal.clone().multiplyScalar(offset)
-    );
+    // Clear continuity reference for clean snap
+    const surface = this.findSurfacePoint(targetPos, null);
+    if (!surface) {
+      console.warn('[ScalpSurface] Snap failed - no surface point');
+      return null;
+    }
     
-    console.log('[ScalpSurface] snapToTarget result:', {
-      surfacePoint: surface.point.toArray().map(v => v.toFixed(4)),
-      normal: surface.normal.toArray().map(v => v.toFixed(4)),
-      finalPosition: finalPosition.toArray().map(v => v.toFixed(4)),
-    });
+    const finalPos = surface.point.clone();
+    finalPos.addScaledVector(surface.normal, offset);
+    
+    if (DEBUG_RAYCAST || import.meta.env.DEV) {
+      console.log('[ScalpSurface] Snapped:', {
+        surface: surface.point.toArray().map(v => v.toFixed(4)),
+        final: finalPos.toArray().map(v => v.toFixed(4)),
+      });
+    }
     
     return {
-      position: finalPosition,
+      position: finalPos,
       normal: surface.normal,
       surfacePoint: surface.point,
     };
   }
   
-  getInitialPosition(targetPos, offset = MOVEMENT_CONFIG.scalpOffset) {
-    return this.snapToTarget(targetPos, offset);
+  /**
+   * Clear continuity tracking (call after teleporting coil)
+   */
+  clearContinuity() {
+    this._lastSurfacePoint = null;
   }
 }
+
+// ============================================================================
+// ORIENTATION HELPERS
+// ============================================================================
 
 // Reusable objects for orientation calculation
 const _orientQuat = new THREE.Quaternion();
@@ -368,89 +302,76 @@ const _up = new THREE.Vector3(0, 1, 0);
 const _right = new THREE.Vector3();
 
 /**
- * Calculate coil orientation quaternion from surface normal and user angles
+ * Calculate coil orientation from surface normal and user angles
+ * Coil's contact face (-Z local) points into the scalp
  */
 export function calculateCoilOrientation(normal, userYaw = 0, userPitch = 0) {
+  // Coil -Z points into scalp (opposite of outward normal)
   _targetDir.copy(normal).negate();
   
-  if (Math.abs(_targetDir.y) > 0.99) {
-    _matrix.lookAt(
-      new THREE.Vector3(0, 0, 0),
-      _targetDir,
-      new THREE.Vector3(0, 0, _targetDir.y > 0 ? -1 : 1)
-    );
-  } else {
-    _up.set(0, 1, 0);
-    _matrix.lookAt(
-      new THREE.Vector3(0, 0, 0),
-      _targetDir,
-      _up
-    );
-  }
-  
+  // Create base rotation aligning -Z with target direction
+  _matrix.lookAt(new THREE.Vector3(0, 0, 0), _targetDir, _up);
   _orientQuat.setFromRotationMatrix(_matrix);
   
-  if (userYaw !== 0) {
-    _yawQuat.setFromAxisAngle(normal, userYaw);
-    _orientQuat.premultiply(_yawQuat);
-  }
+  // Apply user yaw (rotation around surface normal)
+  _yawQuat.setFromAxisAngle(normal, userYaw);
+  _orientQuat.premultiply(_yawQuat);
   
-  if (userPitch !== 0) {
-    _right.set(1, 0, 0).applyQuaternion(_orientQuat);
-    _pitchQuat.setFromAxisAngle(_right, userPitch);
-    _orientQuat.premultiply(_pitchQuat);
+  // Apply user pitch (tilt forward/back)
+  _right.crossVectors(_up, normal).normalize();
+  if (_right.lengthSq() < 0.01) {
+    _right.set(1, 0, 0);
   }
+  _pitchQuat.setFromAxisAngle(_right, userPitch);
+  _orientQuat.premultiply(_pitchQuat);
   
   return _orientQuat.clone();
 }
 
-// Reusable vectors for key movement calculation
-const _forward = new THREE.Vector3();
-const _camRight = new THREE.Vector3();
-const _moveVec = new THREE.Vector3();
-const _tempNormal = new THREE.Vector3();
-
 /**
- * FIX C: Convert WASD/Arrow keys to movement direction based on camera view
- * Now accepts surfaceNormal and projects movement onto tangent plane
- * 
- * @param {Object} keys - Key state object with boolean flags
- * @param {THREE.Camera} camera - Current camera for view direction
- * @param {THREE.Vector3} [surfaceNormal] - Optional surface normal for tangent projection
- * @returns {THREE.Vector3} Normalized movement direction in world space (or zero vector)
+ * Convert keyboard state to camera-relative movement direction
  */
 export function keysToMoveDirection(keys, camera, surfaceNormal = null) {
-  camera.getWorldDirection(_forward);
-  _camRight.crossVectors(_forward, camera.up).normalize();
+  const dir = new THREE.Vector3();
   
-  _moveVec.set(0, 0, 0);
+  // Get camera forward/right on XZ plane
+  const forward = new THREE.Vector3();
+  const right = new THREE.Vector3();
   
-  if (keys.w || keys.arrowup) _moveVec.add(_forward);
-  if (keys.s || keys.arrowdown) _moveVec.sub(_forward);
-  if (keys.d || keys.arrowright) _moveVec.add(_camRight);
-  if (keys.a || keys.arrowleft) _moveVec.sub(_camRight);
-  
-  if (_moveVec.lengthSq() < 0.0001) {
-    return _moveVec;
+  camera.getWorldDirection(forward);
+  forward.y = 0;
+  if (forward.lengthSq() > 0.001) {
+    forward.normalize();
+  } else {
+    forward.set(0, 0, -1);
   }
   
-  // FIX C: If surface normal provided, project onto tangent plane
+  right.crossVectors(forward, _up).normalize();
+  
+  // Accumulate input
+  if (keys.w || keys.arrowup) dir.add(forward);
+  if (keys.s || keys.arrowdown) dir.sub(forward);
+  if (keys.a || keys.arrowleft) dir.sub(right);
+  if (keys.d || keys.arrowright) dir.add(right);
+  
+  if (dir.lengthSq() < 0.0001) return dir;
+  
+  dir.normalize();
+  
+  // Project onto tangent plane if normal provided
   if (surfaceNormal) {
-    const dot = _moveVec.dot(surfaceNormal);
-    _moveVec.sub(_tempNormal.copy(surfaceNormal).multiplyScalar(dot));
-    
-    if (_moveVec.lengthSq() < 0.0001) {
-      _moveVec.set(0, 0, 0);
-      return _moveVec;
+    const dot = dir.dot(surfaceNormal);
+    dir.addScaledVector(surfaceNormal, -dot);
+    if (dir.lengthSq() > 0.0001) {
+      dir.normalize();
     }
   }
   
-  _moveVec.normalize();
-  return _moveVec;
+  return dir;
 }
 
 /**
- * Clamp pitch value within allowed range
+ * Clamp pitch to configured limits
  */
 export function clampPitch(pitch) {
   return Math.max(-MOVEMENT_CONFIG.maxPitch, Math.min(MOVEMENT_CONFIG.maxPitch, pitch));

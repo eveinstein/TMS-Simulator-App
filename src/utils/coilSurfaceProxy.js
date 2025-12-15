@@ -259,10 +259,11 @@ export function buildCoilProxySurface({
       }
       
       // Raycast from head center toward this vertex
+      // IMPORTANT: recursive=false to avoid hitting fiducial marker spheres
       const direction = new THREE.Vector3().subVectors(tempVec, headCenter).normalize();
       raycaster.set(headCenter, direction);
       
-      const intersects = raycaster.intersectObject(headMesh, true);
+      const intersects = raycaster.intersectObject(headMesh, false);
       
       if (intersects.length > 0) {
         // Use OUTERMOST hit (Fix A)

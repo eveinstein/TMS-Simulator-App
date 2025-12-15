@@ -159,10 +159,19 @@ function App() {
   const [showPopup, setShowPopup] = useState(null);
   
   const handleTargetClick = useCallback((name) => {
-    // Update store - this triggers coil snap in TMSCoil
-    setSelectedTargetKey(name);
-    setShowPopup(name);
-  }, [setSelectedTargetKey]);
+    console.log('[App] Target clicked:', name);
+    // Clear first to allow re-snapping to same target
+    if (selectedTargetKey === name) {
+      setSelectedTargetKey(null);
+      setTimeout(() => {
+        setSelectedTargetKey(name);
+        setShowPopup(name);
+      }, 0);
+    } else {
+      setSelectedTargetKey(name);
+      setShowPopup(name);
+    }
+  }, [selectedTargetKey, setSelectedTargetKey]);
   
   const handleClosePopup = useCallback(() => {
     setShowPopup(null);

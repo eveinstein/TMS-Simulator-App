@@ -154,24 +154,78 @@ W: ${coilRotation[3].toFixed(4)}` : 'Not set'}</pre>
   );
 }
 
+// Target proximity indicator - shows when coil is near an EEG target
+function TargetProximityIndicator({ target, distance }) {
+  if (!target) return null;
+  
+  const targetLabels = {
+    F3: 'F3 - Left DLPFC',
+    F4: 'F4 - Right DLPFC',
+    FP2: 'FP2 - Right OFC',
+    C3: 'C3 - Left Motor',
+    SMA: 'SMA - Supplementary Motor',
+  };
+  
+  const label = targetLabels[target] || target;
+  
+  return (
+    <div style={{
+      position: 'absolute',
+      top: '80px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 212, 255, 0.1) 100%)',
+      border: '2px solid #00d4ff',
+      borderRadius: '12px',
+      padding: '16px 32px',
+      zIndex: 100,
+      textAlign: 'center',
+      boxShadow: '0 0 30px rgba(0, 212, 255, 0.4), 0 4px 20px rgba(0, 0, 0, 0.4)',
+      backdropFilter: 'blur(8px)',
+      animation: 'fadeIn 0.2s ease-out',
+    }}>
+      <div style={{
+        fontSize: '12px',
+        fontWeight: '600',
+        color: '#00d4ff',
+        textTransform: 'uppercase',
+        letterSpacing: '2px',
+        marginBottom: '4px',
+      }}>
+        Target Acquired
+      </div>
+      <div style={{
+        fontSize: '24px',
+        fontWeight: '700',
+        color: '#ffffff',
+        textShadow: '0 0 10px rgba(0, 212, 255, 0.5)',
+      }}>
+        {label}
+      </div>
+      {distance !== null && distance !== undefined && (
+        <div style={{
+          fontSize: '14px',
+          color: 'rgba(255, 255, 255, 0.7)',
+          marginTop: '4px',
+          fontFamily: 'monospace',
+        }}>
+          {distance.toFixed(1)} mm
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
-  const { mode, setMode, selectedTargetKey, setSelectedTargetKey } = useTMSStore();
+  const { mode, setMode, selectedTargetKey, requestSnap, hoverTargetKey } = useTMSStore();
   const [showPopup, setShowPopup] = useState(null);
   
   const handleTargetClick = useCallback((name) => {
     console.log('[App] Target clicked:', name);
-    // Clear first to allow re-snapping to same target
-    if (selectedTargetKey === name) {
-      setSelectedTargetKey(null);
-      setTimeout(() => {
-        setSelectedTargetKey(name);
-        setShowPopup(name);
-      }, 0);
-    } else {
-      setSelectedTargetKey(name);
-      setShowPopup(name);
-    }
-  }, [selectedTargetKey, setSelectedTargetKey]);
+    // requestSnap always triggers via nonce - no need for clear-then-set
+    requestSnap(name);
+    setShowPopup(name);
+  }, [requestSnap]);
   
   const handleClosePopup = useCallback(() => {
     setShowPopup(null);
@@ -211,6 +265,12 @@ function App() {
           <TMSScene 
             onTargetClick={handleTargetClick}
             selectedTarget={selectedTargetKey}
+          />
+          
+          {/* Proximity indicator overlay - uses hoverTargetKey from store */}
+          <TargetProximityIndicator 
+            target={hoverTargetKey} 
+            distance={null} 
           />
         </div>
         

@@ -216,19 +216,21 @@ export function buildCoilProxySurface({
   }
   posAttr.needsUpdate = true;
   
+  // Compute head center from head mesh (CRITICAL for raycasting)
+  let headCenter = origin.clone(); // Default to fiducial plane origin
+  
   // Shrinkwrap: project vertices onto head mesh
   if (headMesh) {
     headMesh.updateMatrixWorld(true);
     
     const raycaster = new THREE.Raycaster();
-    const headCenter = new THREE.Vector3();
     
-    // Compute head center from bounding sphere
+    // Compute head center from bounding sphere of ACTUAL head mesh
     if (headMesh.geometry) {
       headMesh.geometry.computeBoundingSphere();
       const sphere = headMesh.geometry.boundingSphere;
       if (sphere) {
-        headCenter.copy(sphere.center).applyMatrix4(headMesh.matrixWorld);
+        headCenter = sphere.center.clone().applyMatrix4(headMesh.matrixWorld);
       }
     }
     
@@ -312,13 +314,14 @@ export function buildCoilProxySurface({
   mesh.name = 'coilProxySurface';
   mesh.visible = import.meta.env.DEV; // Only visible in dev mode
   
-  // Store metadata for boundary clamping
+  // Store metadata for boundary clamping AND raycasting
   mesh.userData = {
     planeOrigin: origin,
     planeU: u,
     planeV: v,
     planeN: n,
     baseRadius: baseRadius,
+    headCenter: headCenter.clone(), // CRITICAL: Store for ScalpSurface raycasting
   };
   
   if (import.meta.env.DEV) {

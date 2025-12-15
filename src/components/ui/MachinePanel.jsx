@@ -53,7 +53,7 @@ export function MachinePanel() {
   const nearestTarget = useTMSStore(s => s.nearestTarget);
   const setNearestTarget = useTMSStore(s => s.setNearestTarget);
   const selectedTargetKey = useTMSStore(s => s.selectedTargetKey);
-  const setSelectedTargetKey = useTMSStore(s => s.setSelectedTargetKey);
+  const requestSnap = useTMSStore(s => s.requestSnap);
   const resetCoilPosition = useTMSStore(s => s.resetCoilPosition);
   
   // Local UI state
@@ -176,13 +176,10 @@ export function MachinePanel() {
   }, [setProtocolField]);
   
   const handleTargetClick = useCallback((target) => {
-    if (selectedTargetKey === target) {
-      setSelectedTargetKey(null);
-      setTimeout(() => setSelectedTargetKey(target), 0);
-    } else {
-      setSelectedTargetKey(target);
-    }
-  }, [selectedTargetKey, setSelectedTargetKey]);
+    // requestSnap always triggers a new snap via nonce increment
+    // No need for clear-then-set pattern anymore
+    requestSnap(target);
+  }, [requestSnap]);
   
   const handleLockToggle = useCallback(() => {
     if (isCoilLocked) {
@@ -193,9 +190,9 @@ export function MachinePanel() {
   }, [isCoilLocked, nearestTarget, lockCoil, unlockCoil]);
   
   const handleResetCoil = useCallback(() => {
-    setSelectedTargetKey(null);
+    requestSnap(null); // Clear selection
     resetCoilPosition();
-  }, [setSelectedTargetKey, resetCoilPosition]);
+  }, [requestSnap, resetCoilPosition]);
   
   // Progress
   const progress = timing && protocol.totalPulses 

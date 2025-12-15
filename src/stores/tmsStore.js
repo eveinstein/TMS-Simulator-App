@@ -264,13 +264,29 @@ export const useTMSStore = create((set, get) => ({
   // ============================================================================
   targetPositions: null, // Will be set when head model loads
   nearestTarget: null,
-  selectedTargetKey: null, // Currently selected EEG target (F3, F4, FP2, SMA, C3)
+  selectedTargetKey: null, // Currently selected EEG target for UI highlight
   coilResetTrigger: 0, // Increment to trigger coil reset
+  
+  // Snap request - nonce-based to prevent re-triggering
+  // Only fires snap when nonce changes (not when selection persists)
+  snapRequest: { key: null, nonce: 0 },
+  
+  // Proximity hover state (for educational indicator)
+  hoverTargetKey: null,
   
   setTargetPositions: (positions) => set({ targetPositions: positions }),
   setNearestTarget: (target) => set({ nearestTarget: target }),
   setSelectedTargetKey: (key) => set({ selectedTargetKey: key }),
   resetCoilPosition: () => set(state => ({ coilResetTrigger: state.coilResetTrigger + 1 })),
+  
+  // Request a snap - increments nonce to trigger effect exactly once
+  requestSnap: (key) => set(state => ({
+    selectedTargetKey: key, // Also update UI highlight
+    snapRequest: { key, nonce: state.snapRequest.nonce + 1 }
+  })),
+  
+  // Set hover target (proximity indicator)
+  setHoverTargetKey: (key) => set({ hoverTargetKey: key }),
   
   // ============================================================================
   // RMT TRAINING STATE - Grouped object

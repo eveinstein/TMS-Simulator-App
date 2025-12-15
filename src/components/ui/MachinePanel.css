@@ -275,6 +275,7 @@
 
 .section-content {
   padding: var(--space-lg);
+  overflow: visible;
 }
 
 .section-content.collapsed {
@@ -290,6 +291,7 @@
   background: linear-gradient(180deg, 
     rgba(0, 212, 255, 0.05) 0%, 
     var(--bg-tertiary) 100%);
+  overflow: visible; /* Allow content to show fully */
 }
 
 .target-section .section-header {
@@ -306,7 +308,17 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-sm);
-  margin-bottom: var(--space-md);
+  margin-bottom: var(--space-lg);
+  width: 100%;
+}
+
+/* Make 5th button span center of second row */
+.target-grid .target-btn:nth-child(4) {
+  grid-column: 1;
+}
+
+.target-grid .target-btn:nth-child(5) {
+  grid-column: 2;
 }
 
 .target-btn {
@@ -315,7 +327,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--space-md) var(--space-sm);
+  padding: var(--space-md) var(--space-xs);
+  min-height: 56px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
@@ -324,7 +337,7 @@
   font-weight: var(--font-semibold);
   cursor: pointer;
   transition: all var(--transition-base);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .target-btn::before {

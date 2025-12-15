@@ -67,12 +67,20 @@ export class ScalpSurface {
     this.surfaceMesh = mesh;
     mesh.updateMatrixWorld(true);
     
-    // Compute head center from bounding sphere
-    mesh.geometry.computeBoundingSphere();
-    const sphere = mesh.geometry.boundingSphere;
-    if (sphere) {
-      this.headCenter.copy(sphere.center);
-      this.headCenter.applyMatrix4(mesh.matrixWorld);
+    // CRITICAL: Use headCenter from proxy mesh userData if available
+    // This was computed from the actual head mesh, not the proxy dome
+    if (mesh.userData?.headCenter) {
+      this.headCenter.copy(mesh.userData.headCenter);
+      console.log('[ScalpSurface] Using stored headCenter from proxy userData');
+    } else {
+      // Fallback: compute from bounding sphere (less accurate for dome)
+      mesh.geometry.computeBoundingSphere();
+      const sphere = mesh.geometry.boundingSphere;
+      if (sphere) {
+        this.headCenter.copy(sphere.center);
+        this.headCenter.applyMatrix4(mesh.matrixWorld);
+      }
+      console.warn('[ScalpSurface] No stored headCenter, computed from geometry');
     }
     
     this.isReady = true;
@@ -81,7 +89,6 @@ export class ScalpSurface {
     console.log('[ScalpSurface] Initialized:', {
       meshName: mesh.name || 'unnamed',
       headCenter: this.headCenter.toArray().map(v => v.toFixed(4)),
-      radius: sphere?.radius?.toFixed(4) || 'unknown',
     });
   }
   
@@ -249,6 +256,7 @@ export class ScalpSurface {
   
   /**
    * Snap directly to a target position
+   * Uses robust raycasting: from headCenter through targetPos to find surface
    */
   snapToTarget(targetPos, offset = MOVEMENT_CONFIG.scalpOffset) {
     if (!this.isReady) {
@@ -256,22 +264,60 @@ export class ScalpSurface {
       return null;
     }
     
-    // Clear continuity reference for clean snap
-    const surface = this.findSurfacePoint(targetPos, null);
-    if (!surface) {
-      console.warn('[ScalpSurface] Snap failed - no surface point');
-      return null;
+    // Clear continuity for fresh snap
+    this._lastSurfacePoint = null;
+    
+    // Strategy: Cast ray from headCenter THROUGH targetPos
+    // This ensures we find the surface point closest to target
+    const direction = this._direction.subVectors(targetPos, this.headCenter).normalize();
+    
+    // Cast from head center outward
+    this.raycaster.set(this.headCenter, direction);
+    let intersects = this.raycaster.intersectObject(this.surfaceMesh, false);
+    
+    if (intersects.length === 0) {
+      // Fallback: cast from far outside toward headCenter
+      this._farPoint.copy(this.headCenter).addScaledVector(direction, 0.5);
+      this._tempVec.copy(direction).negate();
+      this.raycaster.set(this._farPoint, this._tempVec);
+      intersects = this.raycaster.intersectObject(this.surfaceMesh, false);
+      
+      if (intersects.length === 0) {
+        console.warn('[ScalpSurface] Snap failed - no intersection on ray through target');
+        // Last resort: use generic findSurfacePoint
+        const surface = this.findSurfacePoint(targetPos, null);
+        if (!surface) {
+          console.error('[ScalpSurface] Snap completely failed');
+          return null;
+        }
+        return this._finishSnap(surface, offset);
+      }
+      
+      // Use first hit from outside
+      return this._finishSnap(this._processHit(intersects[0]), offset);
     }
+    
+    // Use outermost hit (last in array for center-out ray)
+    const hit = intersects[intersects.length - 1];
+    return this._finishSnap(this._processHit(hit), offset);
+  }
+  
+  /**
+   * Helper to finish snap with offset
+   */
+  _finishSnap(surface, offset) {
+    if (!surface) return null;
     
     const finalPos = surface.point.clone();
     finalPos.addScaledVector(surface.normal, offset);
     
-    if (DEBUG_RAYCAST || import.meta.env.DEV) {
-      console.log('[ScalpSurface] Snapped:', {
-        surface: surface.point.toArray().map(v => v.toFixed(4)),
-        final: finalPos.toArray().map(v => v.toFixed(4)),
-      });
-    }
+    // Store for continuity
+    this._lastSurfacePoint = surface.point.clone();
+    
+    console.log('[ScalpSurface] Snap success:', {
+      surface: surface.point.toArray().map(v => v.toFixed(4)),
+      final: finalPos.toArray().map(v => v.toFixed(4)),
+    });
     
     return {
       position: finalPos,

@@ -84,6 +84,15 @@ export function TMSCoil({ proxyMesh, onCoilMove }) {
     pitch: 0,
   });
   
+  // Snap guard - prevents re-entrancy
+  const snappingRef = useRef(false);
+  const lastSnapNonceRef = useRef(0);
+  
+  // Proximity tracking with hysteresis
+  const lastHoverTargetRef = useRef(null);
+  const PROXIMITY_ENTER = 0.015; // 15mm - enter zone
+  const PROXIMITY_EXIT = 0.020;  // 20mm - exit zone (hysteresis)
+  
   // Three.js context
   const { camera, gl } = useThree();
   const gltf = useGLTF(`${import.meta.env.BASE_URL}models/coil.glb`);
@@ -97,9 +106,12 @@ export function TMSCoil({ proxyMesh, onCoilMove }) {
   const mode = useTMSStore(s => s.mode);
   const rmt = useTMSStore(s => s.rmt);
   const firePulse = useTMSStore(s => s.firePulse);
-  const selectedTargetKey = useTMSStore(s => s.selectedTargetKey);
   const targetPositions = useTMSStore(s => s.targetPositions);
   const coilResetTrigger = useTMSStore(s => s.coilResetTrigger);
+  
+  // Nonce-based snap request - only reacts to nonce changes
+  const snapRequest = useTMSStore(s => s.snapRequest);
+  const setHoverTargetKey = useTMSStore(s => s.setHoverTargetKey);
   
   // Process coil model once
   const clonedScene = useMemo(() => {
@@ -214,33 +226,54 @@ export function TMSCoil({ proxyMesh, onCoilMove }) {
   }, [proxyMesh, effectiveOffset, updateTransform, isReady]);
   
   // ============================================================================
-  // TARGET SNAP - Fires when selectedTargetKey changes
+  // TARGET SNAP - Fires ONLY when snapRequest.nonce changes (event-based)
   // ============================================================================
   useEffect(() => {
-    // Skip if no target selected or not ready
-    if (!selectedTargetKey || !isReady || !targetPositions) {
+    // Check if this is a new snap request
+    const { key, nonce } = snapRequest;
+    
+    // Skip if no new request, not ready, or already snapping
+    if (nonce === lastSnapNonceRef.current || !isReady || snappingRef.current) {
       return;
     }
     
-    const targetPos = targetPositions[selectedTargetKey];
-    if (!targetPos) {
-      console.warn('[TMSCoil] Unknown target:', selectedTargetKey);
+    // Skip if no target key
+    if (!key || !targetPositions) {
+      lastSnapNonceRef.current = nonce;
       return;
     }
+    
+    const targetPos = targetPositions[key];
+    if (!targetPos) {
+      console.warn('[TMSCoil] Unknown target:', key);
+      lastSnapNonceRef.current = nonce;
+      return;
+    }
+    
+    // Set re-entrancy guard
+    snappingRef.current = true;
+    lastSnapNonceRef.current = nonce;
     
     // Convert to Vector3 if needed
     const targetVec = targetPos instanceof THREE.Vector3
       ? targetPos.clone()
       : new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z);
     
-    console.log('[TMSCoil] Snapping to:', selectedTargetKey);
+    console.log('[TMSCoil] Snap requested:', key, 'nonce:', nonce);
     
     if (snapToPosition(targetVec)) {
-      console.log('[TMSCoil] Snap complete:', selectedTargetKey);
+      console.log('[TMSCoil] Snap complete:', key);
+      
+      // Update hover state immediately (coil is at target)
+      lastHoverTargetRef.current = key;
+      setHoverTargetKey(key);
     } else {
-      console.error('[TMSCoil] Snap failed:', selectedTargetKey);
+      console.error('[TMSCoil] Snap failed:', key);
     }
-  }, [selectedTargetKey, targetPositions, isReady, snapToPosition]);
+    
+    // Clear re-entrancy guard
+    snappingRef.current = false;
+  }, [snapRequest.nonce, targetPositions, isReady, snapToPosition, setHoverTargetKey]);
   
   // ============================================================================
   // RESET TRIGGER - Fires when coilResetTrigger increments
@@ -341,6 +374,42 @@ export function TMSCoil({ proxyMesh, onCoilMove }) {
     
     if (moved) {
       updateTransform();
+    }
+    
+    // Proximity detection with hysteresis for educational indicator
+    if (targetPositions) {
+      const coilPos = state.position;
+      let nearestTarget = null;
+      let nearestDist = Infinity;
+      
+      for (const [name, pos] of Object.entries(targetPositions)) {
+        const dist = coilPos.distanceTo(pos);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestTarget = name;
+        }
+      }
+      
+      const currentHover = lastHoverTargetRef.current;
+      
+      // Hysteresis logic: different thresholds for enter vs exit
+      if (currentHover === null) {
+        // Not hovering - check ENTER threshold
+        if (nearestDist < PROXIMITY_ENTER) {
+          lastHoverTargetRef.current = nearestTarget;
+          setHoverTargetKey(nearestTarget);
+        }
+      } else {
+        // Currently hovering - check EXIT threshold (larger = sticky)
+        if (nearestDist > PROXIMITY_EXIT) {
+          lastHoverTargetRef.current = null;
+          setHoverTargetKey(null);
+        } else if (currentHover !== nearestTarget && nearestDist < PROXIMITY_ENTER) {
+          // Switched to a different nearby target
+          lastHoverTargetRef.current = nearestTarget;
+          setHoverTargetKey(nearestTarget);
+        }
+      }
     }
   });
   

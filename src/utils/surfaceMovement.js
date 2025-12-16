@@ -22,12 +22,13 @@ const DEBUG_RAYCAST = false;
 
 // Movement configuration
 export const MOVEMENT_CONFIG = {
-  moveSpeed: 0.15,        // Meters per second
+  moveSpeed: 0.10,        // Meters per second (reduced ~33% for less twitchy feel)
   rotateSpeed: 1.8,       // Radians per second for yaw
   pitchSpeed: 0.9,        // Radians per second for pitch
   scalpOffset: 0.006,     // Default hover distance above surface (6mm)
   snapThreshold: 0.015,   // Distance to auto-snap to target (15mm)
   maxPitch: Math.PI / 6,  // ±30 degrees pitch limit
+  boundaryMargin: 0.008,  // 8mm margin from fiducial boundary
 };
 
 /**
@@ -414,4 +415,130 @@ export function keysToMoveDirection(keys, camera, surfaceNormal = null) {
  */
 export function clampPitch(pitch) {
   return Math.max(-MOVEMENT_CONFIG.maxPitch, Math.min(MOVEMENT_CONFIG.maxPitch, pitch));
+}
+
+// ============================================================================
+// FIDUCIAL BOUNDARY CONSTRAINT (Task 1)
+// ============================================================================
+
+/**
+ * Build a convex hull polygon from fiducial positions in XZ plane
+ * Returns array of {x, z} points in CCW order
+ */
+export function buildFiducialBoundary(fiducials) {
+  if (!fiducials || Object.keys(fiducials).length < 4) {
+    return null;
+  }
+  
+  const { Nasion, Inion, LPA, RPA } = fiducials;
+  if (!Nasion || !Inion || !LPA || !RPA) {
+    return null;
+  }
+  
+  // Project to XZ plane
+  const points = [
+    { x: Nasion.x, z: Nasion.z, name: 'Nasion' },
+    { x: Inion.x, z: Inion.z, name: 'Inion' },
+    { x: LPA.x, z: LPA.z, name: 'LPA' },
+    { x: RPA.x, z: RPA.z, name: 'RPA' },
+  ];
+  
+  // Compute centroid
+  const cx = points.reduce((s, p) => s + p.x, 0) / 4;
+  const cz = points.reduce((s, p) => s + p.z, 0) / 4;
+  
+  // Sort by angle around centroid (CCW)
+  points.sort((a, b) => {
+    const angleA = Math.atan2(a.z - cz, a.x - cx);
+    const angleB = Math.atan2(b.z - cz, b.x - cx);
+    return angleA - angleB;
+  });
+  
+  return { points, centroid: { x: cx, z: cz } };
+}
+
+/**
+ * Check if point (x, z) is inside polygon using ray casting
+ */
+function pointInPolygon(x, z, polygon) {
+  const pts = polygon.points;
+  let inside = false;
+  
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].x, zi = pts[i].z;
+    const xj = pts[j].x, zj = pts[j].z;
+    
+    if (((zi > z) !== (zj > z)) && (x < (xj - xi) * (z - zi) / (zj - zi) + xi)) {
+      inside = !inside;
+    }
+  }
+  
+  return inside;
+}
+
+/**
+ * Find closest point on polygon boundary to given point
+ */
+function closestPointOnPolygon(x, z, polygon) {
+  const pts = polygon.points;
+  let closestDist = Infinity;
+  let closestPoint = { x, z };
+  
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const ax = pts[i].x, az = pts[i].z;
+    const bx = pts[j].x, bz = pts[j].z;
+    
+    // Project point onto line segment
+    const dx = bx - ax;
+    const dz = bz - az;
+    const len2 = dx * dx + dz * dz;
+    
+    let t = 0;
+    if (len2 > 0.000001) {
+      t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / len2));
+    }
+    
+    const px = ax + t * dx;
+    const pz = az + t * dz;
+    const dist = Math.sqrt((x - px) * (x - px) + (z - pz) * (z - pz));
+    
+    if (dist < closestDist) {
+      closestDist = dist;
+      closestPoint = { x: px, z: pz };
+    }
+  }
+  
+  return closestPoint;
+}
+
+/**
+ * Constrain a position to stay within fiducial boundary with margin
+ * Returns clamped {x, z} or original if inside
+ */
+export function constrainToBoundary(x, z, boundary, margin = MOVEMENT_CONFIG.boundaryMargin) {
+  if (!boundary) return { x, z, clamped: false };
+  
+  // Shrink boundary by margin for the test
+  const cx = boundary.centroid.x;
+  const cz = boundary.centroid.z;
+  
+  // Scale point toward centroid by margin factor for boundary check
+  const shrunkPoints = boundary.points.map(p => {
+    const dx = p.x - cx;
+    const dz = p.z - cz;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    const scale = Math.max(0, (dist - margin) / dist);
+    return { x: cx + dx * scale, z: cz + dz * scale };
+  });
+  
+  const shrunkBoundary = { points: shrunkPoints, centroid: boundary.centroid };
+  
+  if (pointInPolygon(x, z, shrunkBoundary)) {
+    return { x, z, clamped: false };
+  }
+  
+  // Clamp to shrunk boundary
+  const clamped = closestPointOnPolygon(x, z, shrunkBoundary);
+  return { x: clamped.x, z: clamped.z, clamped: true };
 }

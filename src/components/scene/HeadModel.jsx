@@ -5,7 +5,6 @@
  * 
  * Features:
  * - Auto-normalization to 0.22m world size
- * - Radiologic convention validation (Left = +X)
  * - Clickable target markers
  * - Scalp mesh extraction for raycasting
  */
@@ -43,19 +42,22 @@ const FIDUCIAL_ALIASES = {
   'AR': 'RPA',  // AR = Auricular Right
 };
 
-// Color scheme by hemisphere
-const HEMISPHERE_COLORS = {
-  left: '#22c55e',    // Green
-  right: '#ef4444',   // Red
-  midline: '#f97316', // Orange
-  fiducial: '#06b6d4', // Cyan
+// Unique color per EEG target (not by hemisphere)
+const TARGET_COLORS = {
+  F3: '#00d4ff',   // Cyan
+  F4: '#a855f7',   // Purple
+  FP2: '#f97316',  // Orange
+  C3: '#22c55e',   // Green
+  SMA: '#3b82f6',  // Blue
 };
 
+// Fiducials all silver
+const FIDUCIAL_COLOR = '#a0a0a0';
+
 // Target marker component
-function TargetMarker({ position, name, info, onClick, isSelected }) {
+function TargetMarker({ position, name, info, onClick, isSelected, isFiducial }) {
   const meshRef = useRef();
-  const hemisphere = info?.hemisphere || 'fiducial';
-  const color = HEMISPHERE_COLORS[hemisphere];
+  const color = isFiducial ? FIDUCIAL_COLOR : (TARGET_COLORS[name] || '#ffffff');
   
   return (
     <group position={position}>
@@ -79,6 +81,8 @@ function TargetMarker({ position, name, info, onClick, isSelected }) {
           color={color} 
           emissive={color}
           emissiveIntensity={isSelected ? 0.8 : 0.3}
+          metalness={isFiducial ? 0.8 : 0.2}
+          roughness={isFiducial ? 0.3 : 0.5}
         />
       </mesh>
       
@@ -221,7 +225,7 @@ export function HeadModel({ onHeadMeshReady, onFiducialsReady, onTargetClick, se
       {/* Head model */}
       <primitive object={clonedScene} />
       
-      {/* Target markers */}
+      {/* Target markers (EEG positions) */}
       {Object.entries(targets).map(([name, position]) => (
         <TargetMarker
           key={name}
@@ -230,18 +234,20 @@ export function HeadModel({ onHeadMeshReady, onFiducialsReady, onTargetClick, se
           info={TARGET_INFO[name]}
           onClick={onTargetClick}
           isSelected={selectedTarget === name}
+          isFiducial={false}
         />
       ))}
       
-      {/* Fiducial markers (smaller, different style) */}
+      {/* Fiducial markers (anatomical landmarks) */}
       {Object.entries(fiducials).map(([name, position]) => (
         <TargetMarker
           key={name}
           position={[position.x, position.y, position.z]}
           name={name}
-          info={{ hemisphere: 'fiducial', description: `${name} fiducial landmark` }}
+          info={{ description: `${name} fiducial landmark` }}
           onClick={onTargetClick}
           isSelected={selectedTarget === name}
+          isFiducial={true}
         />
       ))}
     </group>

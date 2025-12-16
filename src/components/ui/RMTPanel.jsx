@@ -5,7 +5,7 @@
  * Premium UI matching MachinePanel design system.
  * 
  * Workflow:
- * 1. Hunt - Find hotspot near C3
+ * 1. Find Hand Hotspot - Locate motor hotspot near C3
  * 2. Titration - Determine threshold
  */
 
@@ -26,6 +26,7 @@ export function RMTPanel() {
     revealHotspot,
     completeTrial,
     resetRMT,
+    requestSnap,
   } = useTMSStore();
   
   const [claimedMT, setClaimedMT] = useState('');
@@ -62,6 +63,11 @@ export function RMTPanel() {
     setClaimedMT('');
   }, [resetRMT]);
   
+  // Task 14: Reset coil to C3 without locking
+  const handleResetToC3 = useCallback(() => {
+    requestSnap('C3');
+  }, [requestSnap]);
+  
   // Render Idle State
   const renderIdleState = () => (
     <div className="idle-content">
@@ -81,11 +87,11 @@ export function RMTPanel() {
     </div>
   );
   
-  // Render Hunt Phase
+  // Render Find Hand Hotspot Phase
   const renderHuntPhase = () => (
     <div className="phase-content">
       <div className="phase-header">
-        <span className="phase-badge hunt">Hunt Phase</span>
+        <span className="phase-badge hunt">Find Hand Hotspot</span>
         <span className="trial-number">Trial #{rmt.trialNumber}</span>
       </div>
       
@@ -164,6 +170,9 @@ export function RMTPanel() {
       <div className="action-buttons">
         <button className="btn-action primary" onClick={handleFirePulse}>
           ⚡ Fire Pulse
+        </button>
+        <button className="btn-action secondary" onClick={handleResetToC3}>
+          ↺ Reset to C3
         </button>
         <button className="btn-action secondary" onClick={advanceToTitration}>
           → Advance to Titration
@@ -407,7 +416,9 @@ export function RMTPanel() {
           rMT Training
         </div>
         <span className={`phase-badge ${rmt.phase}`}>
-          {rmt.phase === 'idle' ? 'READY' : rmt.phase.toUpperCase()}
+          {rmt.phase === 'idle' ? 'READY' : 
+           rmt.phase === 'hunt' ? 'FIND HOTSPOT' : 
+           rmt.phase.toUpperCase()}
         </span>
       </div>
       

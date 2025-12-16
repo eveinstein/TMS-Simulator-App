@@ -27,11 +27,11 @@ import './MachinePanel.css';
 
 // Target metadata for UI
 const TARGET_META = {
-  F3:  { label: 'L-DLPFC', hemisphere: 'left' },
-  F4:  { label: 'R-DLPFC', hemisphere: 'right' },
-  FP2: { label: 'R-OFC', hemisphere: 'right' },
-  C3:  { label: 'L-Motor', hemisphere: 'left' },
-  SMA: { label: 'SMA', hemisphere: 'midline' },
+  F3:  { label: 'L-DLPFC' },
+  F4:  { label: 'R-DLPFC' },
+  FP2: { label: 'R-OFC' },
+  C3:  { label: 'L-Motor' },
+  SMA: { label: 'SMA' },
 };
 
 export function MachinePanel() {
@@ -235,7 +235,7 @@ export function MachinePanel() {
                 <button
                   key={key}
                   className={`target-btn ${selectedTargetKey === key ? 'selected' : ''}`}
-                  data-hemisphere={meta.hemisphere}
+                  data-target={key}
                   onClick={() => handleTargetClick(key)}
                   disabled={session.isRunning}
                 >

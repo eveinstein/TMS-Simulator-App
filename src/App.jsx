@@ -8,7 +8,7 @@
  * - Motor Threshold Training (rMT): Training game
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { TMSScene } from './components/scene/TMSScene';
 import { MachinePanel } from './components/ui/MachinePanel';
 import { RMTPanel } from './components/ui/RMTPanel';
@@ -21,6 +21,7 @@ function TargetPopup({ target, onClose }) {
   if (!target) return null;
   
   const targetInfo = {
+    // EEG targets
     F3: {
       title: 'Left DLPFC (F3)',
       description: 'Left dorsolateral prefrontal cortex - Primary target for depression treatment.',
@@ -41,6 +42,23 @@ function TargetPopup({ target, onClose }) {
     SMA: {
       title: 'Supplementary Motor Area',
       description: 'Involved in motor planning and coordination.',
+    },
+    // Fiducials
+    Nasion: {
+      title: 'Nasion',
+      description: 'The intersection of the frontal and nasal bones at the bridge of the nose. A key anatomical landmark for EEG electrode positioning.',
+    },
+    Inion: {
+      title: 'Inion',
+      description: 'The most prominent point of the external occipital protuberance at the back of the skull.',
+    },
+    LPA: {
+      title: 'Left Preauricular Point',
+      description: 'The point just anterior to the left ear canal, used as a lateral reference for head measurements.',
+    },
+    RPA: {
+      title: 'Right Preauricular Point', 
+      description: 'The point just anterior to the right ear canal, used as a lateral reference for head measurements.',
     },
   };
   
@@ -171,47 +189,36 @@ function TargetProximityIndicator({ target, distance }) {
   return (
     <div style={{
       position: 'absolute',
-      top: '80px',
+      top: '72px',
       left: '50%',
       transform: 'translateX(-50%)',
-      background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 212, 255, 0.1) 100%)',
-      border: '2px solid #00d4ff',
-      borderRadius: '12px',
-      padding: '16px 32px',
+      background: 'rgba(8, 8, 12, 0.95)',
+      border: '1px solid rgba(0, 200, 240, 0.4)',
+      borderRadius: '8px',
+      padding: '12px 24px',
       zIndex: 100,
       textAlign: 'center',
-      boxShadow: '0 0 30px rgba(0, 212, 255, 0.4), 0 4px 20px rgba(0, 0, 0, 0.4)',
-      backdropFilter: 'blur(8px)',
-      animation: 'fadeIn 0.2s ease-out',
+      boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
+      backdropFilter: 'blur(12px)',
+      animation: 'fadeIn 0.15s ease-out',
     }}>
       <div style={{
-        fontSize: '12px',
-        fontWeight: '600',
-        color: '#00d4ff',
+        fontSize: '9px',
+        fontWeight: '700',
+        color: '#00c8f0',
         textTransform: 'uppercase',
-        letterSpacing: '2px',
+        letterSpacing: '1.5px',
         marginBottom: '4px',
       }}>
-        Target Acquired
+        Target Localized
       </div>
       <div style={{
-        fontSize: '24px',
-        fontWeight: '700',
-        color: '#ffffff',
-        textShadow: '0 0 10px rgba(0, 212, 255, 0.5)',
+        fontSize: '18px',
+        fontWeight: '600',
+        color: '#f0f0f5',
       }}>
         {label}
       </div>
-      {distance !== null && distance !== undefined && (
-        <div style={{
-          fontSize: '14px',
-          color: 'rgba(255, 255, 255, 0.7)',
-          marginTop: '4px',
-          fontFamily: 'monospace',
-        }}>
-          {distance.toFixed(1)} mm
-        </div>
-      )}
     </div>
   );
 }
@@ -219,11 +226,30 @@ function TargetProximityIndicator({ target, distance }) {
 function App() {
   const { mode, setMode, selectedTargetKey, requestSnap, hoverTargetKey } = useTMSStore();
   const [showPopup, setShowPopup] = useState(null);
+  const prevModeRef = useRef(mode);
+  
+  // Fiducial names that should NOT trigger snapping
+  const FIDUCIAL_NAMES = ['Nasion', 'Inion', 'LPA', 'RPA'];
+  
+  // Task 11: Auto-snap to C3 when entering MT mode
+  useEffect(() => {
+    if (mode === 'rmt' && prevModeRef.current !== 'rmt') {
+      // Entering MT mode - snap to C3 (without locking)
+      requestSnap('C3');
+      console.log('[App] Entering MT mode - auto-snapping to C3');
+    }
+    prevModeRef.current = mode;
+  }, [mode, requestSnap]);
   
   const handleTargetClick = useCallback((name) => {
     console.log('[App] Target clicked:', name);
-    // requestSnap always triggers via nonce - no need for clear-then-set
-    requestSnap(name);
+    
+    // Only snap for EEG targets, not fiducials
+    if (!FIDUCIAL_NAMES.includes(name)) {
+      requestSnap(name);
+    }
+    
+    // Show popup for both targets and fiducials
     setShowPopup(name);
   }, [requestSnap]);
   

@@ -25,7 +25,9 @@ import {
   keysToMoveDirection, 
   calculateCoilOrientation,
   clampPitch,
-  MOVEMENT_CONFIG 
+  MOVEMENT_CONFIG,
+  buildFiducialBoundary,
+  constrainToBoundary
 } from '../../utils/surfaceMovement';
 import * as THREE from 'three';
 
@@ -61,13 +63,24 @@ function validateCoilScale(scene) {
   return maxDim;
 }
 
-export function TMSCoil({ proxyMesh, onCoilMove }) {
+export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
   const groupRef = useRef();
   const scalpSurfaceRef = useRef(null);
+  const boundaryRef = useRef(null);
   
   // State
   const [isReady, setIsReady] = useState(false);
   const [effectiveOffset, setEffectiveOffset] = useState(MOVEMENT_CONFIG.scalpOffset);
+  
+  // Build fiducial boundary when fiducials are available
+  useEffect(() => {
+    if (fiducials) {
+      boundaryRef.current = buildFiducialBoundary(fiducials);
+      if (boundaryRef.current) {
+        console.log('[TMSCoil] Fiducial boundary built');
+      }
+    }
+  }, [fiducials]);
   
   // Refs for mutable state (avoid re-renders)
   const keysRef = useRef({
@@ -137,12 +150,22 @@ export function TMSCoil({ proxyMesh, onCoilMove }) {
     }
   }, [clonedScene]);
   
+  // Track if currently snapped to SMA (needs 180° handle flip per clinical convention)
+  const isSMASnappedRef = useRef(false);
+  
   /**
    * Update Three.js transform from internal state
+   * Applies 180° flip for SMA only (clinical convention: handle points -Z at SMA)
    */
   const updateTransform = useCallback(() => {
     const state = coilStateRef.current;
     const quat = calculateCoilOrientation(state.normal, state.yaw, state.pitch);
+    
+    // Apply 180° flip around local up (normal) ONLY for SMA target
+    if (isSMASnappedRef.current) {
+      const flipQuat = new THREE.Quaternion().setFromAxisAngle(state.normal, Math.PI);
+      quat.multiply(flipQuat);
+    }
     
     setCoilPosition([state.position.x, state.position.y, state.position.z]);
     setCoilRotation([quat.x, quat.y, quat.z, quat.w]);
@@ -351,6 +374,9 @@ export function TMSCoil({ proxyMesh, onCoilMove }) {
           
           console.log('[TMSCoil] Snap executing:', snapRequest.key, targetVec.toArray());
           
+          // Track if snapping to SMA (needs 180° handle flip per clinical convention)
+          isSMASnappedRef.current = (snapRequest.key === 'SMA');
+          
           const result = snapToPosition(targetVec);
           console.log('[TMSCoil] snapToPosition result:', result);
           
@@ -380,14 +406,38 @@ export function TMSCoil({ proxyMesh, onCoilMove }) {
     const moveDir = keysToMoveDirection(keys, camera, state.normal);
     
     if (moveDir.lengthSq() > 0) {
+      // Clear SMA-specific orientation when user moves away
+      isSMASnappedRef.current = false;
+      
       const step = MOVEMENT_CONFIG.moveSpeed * delta;
       const result = scalpSurfaceRef.current.moveAlongSurface(
         state.position, moveDir, step, effectiveOffset
       );
       
       if (result) {
-        state.position.copy(result.position);
-        state.normal.copy(result.normal);
+        // Apply fiducial boundary constraint
+        if (boundaryRef.current) {
+          const constrained = constrainToBoundary(
+            result.position.x, 
+            result.position.z, 
+            boundaryRef.current
+          );
+          if (constrained.clamped) {
+            // Re-project clamped XZ position back to surface
+            const clampedPos = new THREE.Vector3(constrained.x, result.position.y, constrained.z);
+            const resnap = scalpSurfaceRef.current.findSurfacePoint(clampedPos, state.position);
+            if (resnap) {
+              state.position.copy(resnap.point).addScaledVector(resnap.normal, effectiveOffset);
+              state.normal.copy(resnap.normal);
+            }
+          } else {
+            state.position.copy(result.position);
+            state.normal.copy(result.normal);
+          }
+        } else {
+          state.position.copy(result.position);
+          state.normal.copy(result.normal);
+        }
         moved = true;
       }
     }

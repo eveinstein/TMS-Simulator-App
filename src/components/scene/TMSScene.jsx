@@ -5,10 +5,9 @@
  * 
  * Features:
  * - Medical-grade lighting
- * - Radiologic convention indicators
  * - Distance to target display
  * - Camera controls with presets
- * - Hotspot visualization for rMT mode
+ * - Hotspot visualization for MT mode
  */
 
 import React, { useState, useCallback, useRef, useEffect, Suspense, useMemo } from 'react';
@@ -38,95 +37,7 @@ function LoadingFallback() {
   );
 }
 
-// Axis indicator showing radiologic convention
-function AxisIndicator() {
-  return (
-    <group position={[-0.15, -0.05, 0]}>
-      {/* X axis - Patient Left */}
-      <arrowHelper args={[
-        new THREE.Vector3(1, 0, 0),
-        new THREE.Vector3(0, 0, 0),
-        0.03,
-        0x22c55e, // Green for left
-        0.008,
-        0.006
-      ]} />
-      <Html position={[0.04, 0, 0]}>
-        <span style={{ 
-          color: '#22c55e', 
-          fontSize: '10px', 
-          fontWeight: 'bold',
-          whiteSpace: 'nowrap' 
-        }}>
-          +X (L)
-        </span>
-      </Html>
-      
-      {/* Y axis */}
-      <arrowHelper args={[
-        new THREE.Vector3(0, 1, 0),
-        new THREE.Vector3(0, 0, 0),
-        0.03,
-        0x3b82f6,
-        0.008,
-        0.006
-      ]} />
-      <Html position={[0, 0.04, 0]}>
-        <span style={{ color: '#3b82f6', fontSize: '10px', fontWeight: 'bold' }}>+Y</span>
-      </Html>
-      
-      {/* Z axis */}
-      <arrowHelper args={[
-        new THREE.Vector3(0, 0, 1),
-        new THREE.Vector3(0, 0, 0),
-        0.03,
-        0xf97316,
-        0.008,
-        0.006
-      ]} />
-      <Html position={[0, 0, 0.04]}>
-        <span style={{ color: '#f97316', fontSize: '10px', fontWeight: 'bold' }}>+Z</span>
-      </Html>
-    </group>
-  );
-}
-
-// Orientation badges on head
-function OrientationGuide() {
-  return (
-    <>
-      {/* Left side badge */}
-      <Html position={[0.12, 0.08, 0]} center>
-        <div style={{
-          background: 'rgba(34, 197, 94, 0.9)',
-          color: 'white',
-          padding: '2px 8px',
-          borderRadius: '4px',
-          fontSize: '12px',
-          fontWeight: 'bold',
-        }}>
-          L
-        </div>
-      </Html>
-      
-      {/* Right side badge */}
-      <Html position={[-0.12, 0.08, 0]} center>
-        <div style={{
-          background: 'rgba(239, 68, 68, 0.9)',
-          color: 'white',
-          padding: '2px 8px',
-          borderRadius: '4px',
-          fontSize: '12px',
-          fontWeight: 'bold',
-        }}>
-          R
-        </div>
-      </Html>
-    </>
-  );
-}
-
-// Distance indicator floating badge
+// Target proximity indicator floating badge (no distance text)
 function DistanceIndicator({ position, targetName, distance }) {
   if (!position || distance === null) return null;
   
@@ -147,7 +58,6 @@ function DistanceIndicator({ position, targetName, distance }) {
         boxShadow: `0 0 10px ${color}40`,
       }}>
         <div style={{ fontWeight: 'bold', color }}>{targetName}</div>
-        <div>{distance.toFixed(1)} mm</div>
       </div>
     </Html>
   );
@@ -159,26 +69,26 @@ function HotspotMarker({ position, revealed }) {
   
   return (
     <group position={position}>
-      {/* Crosshair */}
+      {/* Crosshair - reduced by 1/3 */}
       <mesh>
-        <ringGeometry args={[0.008, 0.01, 32]} />
+        <ringGeometry args={[0.005, 0.0067, 32]} />
         <meshBasicMaterial color="#ff0000" side={THREE.DoubleSide} />
       </mesh>
       
-      {/* Inner circle */}
+      {/* Inner circle - reduced by 1/3 */}
       <mesh>
-        <circleGeometry args={[0.003, 32]} />
+        <circleGeometry args={[0.002, 32]} />
         <meshBasicMaterial color="#ff0000" transparent opacity={0.5} side={THREE.DoubleSide} />
       </mesh>
       
       {/* Label */}
-      <Html position={[0, 0.02, 0]} center>
+      <Html position={[0, 0.015, 0]} center>
         <div style={{
           background: 'rgba(255, 0, 0, 0.9)',
           color: 'white',
-          padding: '2px 6px',
-          borderRadius: '4px',
-          fontSize: '10px',
+          padding: '2px 5px',
+          borderRadius: '3px',
+          fontSize: '9px',
           fontWeight: 'bold',
         }}>
           HOTSPOT
@@ -196,10 +106,10 @@ function CameraController({ controlsRef, preset }) {
     const controls = controlsRef.current;
     
     switch (preset) {
-      case 'clinician':
-        // Behind patient, looking at left side (C3 visible)
-        controls.object.position.set(0.2, 0.12, 0.15);
-        controls.target.set(0.05, 0.08, 0);
+      case 'physician':
+        // Physician POV: in +X and -Z relative to head, looking toward C3
+        controls.object.position.set(0.25, 0.15, -0.1);
+        controls.target.set(0.06, 0.08, 0);
         break;
       case 'front':
         controls.object.position.set(0, 0.1, 0.35);
@@ -318,13 +228,10 @@ function SceneContent({
       {proxyMesh && (
         <TMSCoil 
           proxyMesh={proxyMesh}
+          fiducials={fiducials}
           onCoilMove={handleCoilMove}
         />
       )}
-      
-      {/* UI Overlays */}
-      <AxisIndicator />
-      <OrientationGuide />
       
       {/* Distance indicator */}
       {coilPos && nearestTarget.name && (
@@ -358,41 +265,40 @@ function SceneContent({
   );
 }
 
-// Legend overlay
+// Controls legend overlay
 function SceneLegend() {
   return (
     <div style={{
       position: 'absolute',
-      bottom: '20px',
-      left: '20px',
-      background: 'rgba(0, 0, 0, 0.85)',
-      color: 'white',
-      padding: '12px 16px',
-      borderRadius: '8px',
-      fontSize: '12px',
-      fontFamily: 'system-ui, sans-serif',
+      bottom: '16px',
+      left: '16px',
+      background: 'rgba(8, 8, 12, 0.92)',
+      color: 'rgba(240, 240, 245, 0.72)',
+      padding: '10px 14px',
+      borderRadius: '6px',
+      fontSize: '10px',
+      fontFamily: "'Inter', -apple-system, sans-serif",
       zIndex: 10,
-      maxWidth: '220px',
+      maxWidth: '180px',
+      border: '1px solid rgba(255, 255, 255, 0.06)',
+      backdropFilter: 'blur(8px)',
+      lineHeight: '1.5',
     }}>
-      <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#60a5fa' }}>
-        Radiologic Convention
+      <div style={{ 
+        fontWeight: '600', 
+        marginBottom: '6px', 
+        color: 'rgba(0, 200, 240, 0.9)',
+        fontSize: '9px',
+        textTransform: 'uppercase',
+        letterSpacing: '1px',
+      }}>
+        Controls
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-        <span style={{ color: '#22c55e', fontWeight: 'bold' }}>L</span>
-        <span>= Patient Left = +X</span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-        <span style={{ color: '#ef4444', fontWeight: 'bold' }}>R</span>
-        <span>= Patient Right = -X</span>
-      </div>
-      
-      <div style={{ borderTop: '1px solid #333', paddingTop: '8px', marginTop: '8px' }}>
-        <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#60a5fa' }}>Controls</div>
-        <div>WASD / Arrows: Move coil</div>
-        <div>Q / E: Yaw rotation</div>
-        <div>R / F: Pitch tilt (±30°)</div>
-        <div>Space: Fire pulse (rMT)</div>
-        <div>Drag: Reposition coil</div>
+      <div style={{ color: 'rgba(240, 240, 245, 0.48)' }}>
+        <div>WASD / Arrows — Move</div>
+        <div>Q / E — Rotate</div>
+        <div>R / F — Tilt</div>
+        <div>Space — Fire (MT)</div>
       </div>
     </div>
   );
@@ -431,10 +337,10 @@ export function TMSScene({ onTargetClick, selectedTarget }) {
   const [debugInfo, setDebugInfo] = useState({ pos: null, normal: null });
   const { mode } = useTMSStore();
   
-  // Set clinician view by default in rMT mode
+  // Set physician view by default in MT mode
   useEffect(() => {
     if (mode === 'rmt') {
-      setCameraPreset('clinician');
+      setCameraPreset('physician');
     } else {
       setCameraPreset('default');
     }
@@ -475,54 +381,37 @@ export function TMSScene({ onTargetClick, selectedTarget }) {
       {/* Camera preset buttons */}
       <div style={{
         position: 'absolute',
-        top: '20px',
-        right: '20px',
+        top: '16px',
+        right: '16px',
         display: 'flex',
-        gap: '8px',
+        gap: '4px',
         zIndex: 10,
       }}>
-        <button
-          onClick={() => setCameraPreset('default')}
-          style={{
-            padding: '6px 12px',
-            background: cameraPreset === 'default' ? '#3b82f6' : 'rgba(0,0,0,0.7)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '12px',
-          }}
-        >
-          Front
-        </button>
-        <button
-          onClick={() => setCameraPreset('clinician')}
-          style={{
-            padding: '6px 12px',
-            background: cameraPreset === 'clinician' ? '#3b82f6' : 'rgba(0,0,0,0.7)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '12px',
-          }}
-        >
-          Clinician
-        </button>
-        <button
-          onClick={() => setCameraPreset('top')}
-          style={{
-            padding: '6px 12px',
-            background: cameraPreset === 'top' ? '#3b82f6' : 'rgba(0,0,0,0.7)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '12px',
-          }}
-        >
-          Top
-        </button>
+        {[
+          { key: 'default', label: 'Front' },
+          { key: 'physician', label: 'Side' },
+          { key: 'top', label: 'Top' },
+        ].map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setCameraPreset(key)}
+            style={{
+              padding: '5px 12px',
+              background: cameraPreset === key ? '#141419' : 'rgba(8, 8, 12, 0.85)',
+              color: cameraPreset === key ? '#00c8f0' : 'rgba(240, 240, 245, 0.5)',
+              border: `1px solid ${cameraPreset === key ? 'rgba(0, 200, 240, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '10px',
+              fontWeight: '600',
+              letterSpacing: '0.3px',
+              transition: 'all 0.1s ease-out',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
       
       <SceneLegend />

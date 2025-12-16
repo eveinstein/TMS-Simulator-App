@@ -5,10 +5,6 @@
  * 
  * CRITICAL: No default protocols - neutral start state
  * Protocol parameters are null/empty until user sets them
- * 
- * RADIOLOGIC CONVENTION:
- * Patient LEFT = +X = viewer's RIGHT
- * Patient RIGHT = −X = viewer's LEFT
  */
 
 import { create } from 'zustand';
@@ -29,8 +25,8 @@ export const MT_CONSTANTS = {
   minMT: 35,
   maxMT: 70,
   
-  // Hotspot generation radius from C3 (mm)
-  maxHotspotRadius: 30,
+  // Hotspot generation radius from C3 (mm) - reduced by 1/3 for tighter clustering
+  maxHotspotRadius: 20,
 };
 
 // Grade thresholds (percent difference)
@@ -134,21 +130,24 @@ export function calculateGrade(percentDiff) {
   return 'F';
 }
 
-// Generate random hotspot near C3
+// Generate random hotspot near C3 on the scalp surface
 function generateHotspotPosition(c3Position) {
   if (!c3Position) {
     // Default position if C3 not available
     return [0.05, 0.12, 0.05];
   }
   
-  // Random offset within radius
+  // Random offset within radius (in XZ plane to stay on scalp)
   const radius = MT_CONSTANTS.maxHotspotRadius / 1000; // Convert mm to world units
   const angle = Math.random() * 2 * Math.PI;
   const r = Math.sqrt(Math.random()) * radius;
   
+  // Keep hotspot on scalp surface by maintaining C3's Y coordinate
+  // The scalp is roughly dome-shaped, so staying at the same height as C3
+  // keeps the hotspot approximately on the surface
   return [
     c3Position[0] + r * Math.cos(angle),
-    c3Position[1] + (Math.random() - 0.5) * 0.01, // Small Y variation
+    c3Position[1], // Same Y as C3 to stay on scalp surface
     c3Position[2] + r * Math.sin(angle),
   ];
 }

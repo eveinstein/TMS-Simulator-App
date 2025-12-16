@@ -109,8 +109,9 @@ export function TMSCoil({ proxyMesh, onCoilMove }) {
   const targetPositions = useTMSStore(s => s.targetPositions);
   const coilResetTrigger = useTMSStore(s => s.coilResetTrigger);
   
-  // Nonce-based snap request - only reacts to nonce changes
-  const snapRequest = useTMSStore(s => s.snapRequest);
+  // Nonce-based snap request - select primitives to ensure re-render
+  const snapRequestKey = useTMSStore(s => s.snapRequest.key);
+  const snapRequestNonce = useTMSStore(s => s.snapRequest.nonce);
   const setHoverTargetKey = useTMSStore(s => s.setHoverTargetKey);
   
   // Process coil model once
@@ -226,54 +227,51 @@ export function TMSCoil({ proxyMesh, onCoilMove }) {
   }, [proxyMesh, effectiveOffset, updateTransform, isReady]);
   
   // ============================================================================
-  // TARGET SNAP - Fires ONLY when snapRequest.nonce changes (event-based)
+  // TARGET SNAP - Fires ONLY when snapRequestNonce changes (event-based)
   // ============================================================================
   useEffect(() => {
-    // Check if this is a new snap request
-    const { key, nonce } = snapRequest;
-    
     // Skip if no new request, not ready, or already snapping
-    if (nonce === lastSnapNonceRef.current || !isReady || snappingRef.current) {
+    if (snapRequestNonce === lastSnapNonceRef.current || !isReady || snappingRef.current) {
       return;
     }
     
     // Skip if no target key
-    if (!key || !targetPositions) {
-      lastSnapNonceRef.current = nonce;
+    if (!snapRequestKey || !targetPositions) {
+      lastSnapNonceRef.current = snapRequestNonce;
       return;
     }
     
-    const targetPos = targetPositions[key];
+    const targetPos = targetPositions[snapRequestKey];
     if (!targetPos) {
-      console.warn('[TMSCoil] Unknown target:', key);
-      lastSnapNonceRef.current = nonce;
+      console.warn('[TMSCoil] Unknown target:', snapRequestKey);
+      lastSnapNonceRef.current = snapRequestNonce;
       return;
     }
     
     // Set re-entrancy guard
     snappingRef.current = true;
-    lastSnapNonceRef.current = nonce;
+    lastSnapNonceRef.current = snapRequestNonce;
     
     // Convert to Vector3 if needed
     const targetVec = targetPos instanceof THREE.Vector3
       ? targetPos.clone()
       : new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z);
     
-    console.log('[TMSCoil] Snap requested:', key, 'nonce:', nonce);
+    console.log('[TMSCoil] Snap requested:', snapRequestKey, 'nonce:', snapRequestNonce);
     
     if (snapToPosition(targetVec)) {
-      console.log('[TMSCoil] Snap complete:', key);
+      console.log('[TMSCoil] Snap complete:', snapRequestKey);
       
       // Update hover state immediately (coil is at target)
-      lastHoverTargetRef.current = key;
-      setHoverTargetKey(key);
+      lastHoverTargetRef.current = snapRequestKey;
+      setHoverTargetKey(snapRequestKey);
     } else {
-      console.error('[TMSCoil] Snap failed:', key);
+      console.error('[TMSCoil] Snap failed:', snapRequestKey);
     }
     
     // Clear re-entrancy guard
     snappingRef.current = false;
-  }, [snapRequest.nonce, targetPositions, isReady, snapToPosition, setHoverTargetKey]);
+  }, [snapRequestNonce, snapRequestKey, targetPositions, isReady, snapToPosition, setHoverTargetKey]);
   
   // ============================================================================
   // RESET TRIGGER - Fires when coilResetTrigger increments

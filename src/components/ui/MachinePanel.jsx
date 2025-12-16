@@ -176,6 +176,7 @@ export function MachinePanel() {
   }, [setProtocolField]);
   
   const handleTargetClick = useCallback((target) => {
+    console.log('[MachinePanel] handleTargetClick called with:', target);
     // requestSnap always triggers a new snap via nonce increment
     // No need for clear-then-set pattern anymore
     requestSnap(target);

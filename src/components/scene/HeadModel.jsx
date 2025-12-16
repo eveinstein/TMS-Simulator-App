@@ -117,6 +117,10 @@ export function HeadModel({ onHeadMeshReady, onFiducialsReady, onTargetClick, se
     let maxRadius = 0;
     
     clone.traverse((child) => {
+      // CRITICAL: Force this specific child to update its world matrix
+      // This ensures position is computed after parent's scale is applied
+      child.updateWorldMatrix(true, false);
+      
       // Find main head mesh (largest mesh by bounding sphere)
       if (child.isMesh && child.geometry) {
         // Ensure geometry has bounding sphere computed
@@ -133,8 +137,9 @@ export function HeadModel({ onHeadMeshReady, onFiducialsReady, onTargetClick, se
       if (name) {
         for (const targetName of Object.keys(TARGET_INFO)) {
           if (name.includes(targetName.toUpperCase())) {
+            // Get world position from matrixWorld (already updated)
             const worldPos = new THREE.Vector3();
-            child.getWorldPosition(worldPos);
+            worldPos.setFromMatrixPosition(child.matrixWorld);
             
             // Debug: log local vs world position
             console.log(`[HeadModel] Target ${targetName} (${child.name}):`, {
@@ -151,8 +156,9 @@ export function HeadModel({ onHeadMeshReady, onFiducialsReady, onTargetClick, se
         // Extract fiducials using alias map
         for (const [alias, fidName] of Object.entries(FIDUCIAL_ALIASES)) {
           if (name.includes(alias) && !extractedFiducials[fidName]) {
+            // Get world position from matrixWorld (already updated)
             const worldPos = new THREE.Vector3();
-            child.getWorldPosition(worldPos);
+            worldPos.setFromMatrixPosition(child.matrixWorld);
             extractedFiducials[fidName] = worldPos;
           }
         }

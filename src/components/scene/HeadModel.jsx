@@ -104,74 +104,82 @@ export function HeadModel({ onHeadMeshReady, onFiducialsReady, onTargetClick, se
   const { scene: clonedScene, targets, fiducials, headMesh } = useMemo(() => {
     const clone = gltf.scene.clone(true);
     
-    // Auto-normalize scale
+    // STEP 1: Apply normalization scale FIRST
     normalizeModelScale(clone, 'head', true);
+    const scaleFactor = clone.scale.x;
+    console.log(`[HeadModel] Scale factor applied: ${scaleFactor.toFixed(6)}`);
     
-    // CRITICAL: Update matrices after scaling so raycasting works correctly
+    // STEP 2: Force full matrix world update on entire hierarchy
     clone.updateMatrixWorld(true);
     
-    // Extract targets and fiducials
+    // STEP 3: Now extract positions using getWorldPosition (matrices are ready)
     const extractedTargets = {};
     const extractedFiducials = {};
     let mainHeadMesh = null;
     let maxRadius = 0;
+    const tempVec = new THREE.Vector3();
     
     clone.traverse((child) => {
-      // CRITICAL: Force this specific child to update its world matrix
-      // This ensures position is computed after parent's scale is applied
-      child.updateWorldMatrix(true, false);
+      if (!child.isMesh || !child.geometry) return;
       
-      // Find main head mesh (largest mesh by bounding sphere)
-      if (child.isMesh && child.geometry) {
-        // Ensure geometry has bounding sphere computed
-        child.geometry.computeBoundingSphere();
-        const radius = child.geometry.boundingSphere?.radius || 0;
-        if (radius > maxRadius) {
-          maxRadius = radius;
-          mainHeadMesh = child;
+      child.geometry.computeBoundingSphere();
+      const sphere = child.geometry.boundingSphere;
+      const radius = sphere?.radius || 0;
+      
+      // Find main head mesh (largest)
+      if (radius > maxRadius) {
+        maxRadius = radius;
+        mainHeadMesh = child;
+      }
+      
+      const name = child.name?.toUpperCase();
+      if (!name || !sphere) return;
+      
+      // For marker meshes, the geometry center IS the position
+      // Transform it to world space
+      const worldCenter = sphere.center.clone();
+      worldCenter.applyMatrix4(child.matrixWorld);
+      
+      // Extract targets
+      for (const targetName of Object.keys(TARGET_INFO)) {
+        if (name.includes(targetName.toUpperCase())) {
+          extractedTargets[targetName] = worldCenter.clone();
+          console.log(`[HeadModel] Target ${targetName}: world=(${worldCenter.x.toFixed(4)}, ${worldCenter.y.toFixed(4)}, ${worldCenter.z.toFixed(4)})`);
         }
       }
       
-      // Extract targets by name
-      const name = child.name?.toUpperCase();
-      if (name) {
-        for (const targetName of Object.keys(TARGET_INFO)) {
-          if (name.includes(targetName.toUpperCase())) {
-            // Get world position from matrixWorld (already updated)
-            const worldPos = new THREE.Vector3();
-            worldPos.setFromMatrixPosition(child.matrixWorld);
-            
-            // Debug: log local vs world position
-            console.log(`[HeadModel] Target ${targetName} (${child.name}):`, {
-              local: [child.position.x.toFixed(4), child.position.y.toFixed(4), child.position.z.toFixed(4)],
-              world: [worldPos.x.toFixed(4), worldPos.y.toFixed(4), worldPos.z.toFixed(4)],
-              hasParent: !!child.parent,
-              parentName: child.parent?.name,
-            });
-            
-            extractedTargets[targetName] = worldPos;
-          }
-        }
-        
-        // Extract fiducials using alias map
-        for (const [alias, fidName] of Object.entries(FIDUCIAL_ALIASES)) {
-          if (name.includes(alias) && !extractedFiducials[fidName]) {
-            // Get world position from matrixWorld (already updated)
-            const worldPos = new THREE.Vector3();
-            worldPos.setFromMatrixPosition(child.matrixWorld);
-            extractedFiducials[fidName] = worldPos;
-          }
+      // Extract fiducials
+      for (const [alias, fidName] of Object.entries(FIDUCIAL_ALIASES)) {
+        if (name.includes(alias) && !extractedFiducials[fidName]) {
+          extractedFiducials[fidName] = worldCenter.clone();
+          console.log(`[HeadModel] Fiducial ${fidName}: world=(${worldCenter.x.toFixed(4)}, ${worldCenter.y.toFixed(4)}, ${worldCenter.z.toFixed(4)})`);
         }
       }
     });
     
-    // Ensure head mesh geometry is ready for raycasting
+    // STEP 4: Sanity check fiducial distances
+    if (extractedFiducials.Nasion && extractedFiducials.Inion && 
+        extractedFiducials.LPA && extractedFiducials.RPA) {
+      const nasionInionDist = extractedFiducials.Nasion.distanceTo(extractedFiducials.Inion);
+      const lpaRpaDist = extractedFiducials.LPA.distanceTo(extractedFiducials.RPA);
+      console.log(`[HeadModel] Fiducial distances: Nasion-Inion=${nasionInionDist.toFixed(4)}m, LPA-RPA=${lpaRpaDist.toFixed(4)}m`);
+      
+      if (nasionInionDist < 0.05 || lpaRpaDist < 0.05) {
+        console.error('[HeadModel] WARNING: Fiducial distances too small! Transform may not be applied.');
+        console.error('  Nasion:', extractedFiducials.Nasion.toArray());
+        console.error('  Inion:', extractedFiducials.Inion.toArray());
+        console.error('  LPA:', extractedFiducials.LPA.toArray());
+        console.error('  RPA:', extractedFiducials.RPA.toArray());
+      }
+    }
+    
+    // Ensure head mesh geometry is ready
     if (mainHeadMesh?.geometry) {
       mainHeadMesh.geometry.computeBoundingBox();
       mainHeadMesh.geometry.computeBoundingSphere();
     }
     
-    // Validate radiologic convention
+    // Validate radiologic convention with full coords
     validateRadiologicConvention(extractedTargets);
     
     return {

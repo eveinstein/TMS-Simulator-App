@@ -106,35 +106,9 @@ export class ScalpSurface {
       return null;
     }
     
-    // Log geometry info on first call
-    if (!this._loggedGeometry) {
-      this._loggedGeometry = true;
-      const geo = this.surfaceMesh.geometry;
-      geo.computeBoundingBox();
-      geo.computeBoundingSphere();
-      console.log('[ScalpSurface] Geometry info:', {
-        vertices: geo.getAttribute('position')?.count,
-        boundingBox: geo.boundingBox ? {
-          min: geo.boundingBox.min.toArray().map(v => v.toFixed(4)),
-          max: geo.boundingBox.max.toArray().map(v => v.toFixed(4)),
-        } : 'none',
-        boundingSphere: geo.boundingSphere ? {
-          center: geo.boundingSphere.center.toArray().map(v => v.toFixed(4)),
-          radius: geo.boundingSphere.radius.toFixed(4),
-        } : 'none',
-        headCenter: this.headCenter.toArray().map(v => v.toFixed(4)),
-      });
-    }
-    
     // Direction from head center to target
     this._direction.subVectors(targetPos, this.headCenter);
     const distToCenter = this._direction.length();
-    
-    console.log('[ScalpSurface] findSurfacePoint:', {
-      targetPos: targetPos.toArray().map(v => v.toFixed(4)),
-      headCenter: this.headCenter.toArray().map(v => v.toFixed(4)),
-      distToCenter: distToCenter.toFixed(4),
-    });
     
     if (distToCenter < 0.001) {
       console.warn('[ScalpSurface] Target at head center');
@@ -147,12 +121,6 @@ export class ScalpSurface {
     this.raycaster.set(this.headCenter, this._direction);
     let intersects = this.raycaster.intersectObject(this.surfaceMesh, false);
     
-    console.log('[ScalpSurface] Center-out raycast:', {
-      from: this.headCenter.toArray().map(v => v.toFixed(4)),
-      direction: this._direction.toArray().map(v => v.toFixed(4)),
-      hits: intersects.length,
-    });
-    
     // If no hits, try reverse ray (from outside looking in)
     if (intersects.length === 0) {
       this._farPoint.copy(this.headCenter).addScaledVector(this._direction, 0.5);
@@ -160,13 +128,10 @@ export class ScalpSurface {
       this.raycaster.set(this._farPoint, this._tempVec);
       intersects = this.raycaster.intersectObject(this.surfaceMesh, false);
       
-      console.log('[ScalpSurface] Reverse raycast:', {
-        from: this._farPoint.toArray().map(v => v.toFixed(4)),
-        hits: intersects.length,
-      });
-      
       if (intersects.length === 0) {
-        console.warn('[ScalpSurface] No surface hit from either direction');
+        if (DEBUG_RAYCAST) {
+          console.warn('[ScalpSurface] No surface hit from either direction');
+        }
         return null;
       }
       
@@ -174,7 +139,7 @@ export class ScalpSurface {
       return this._processHit(intersects[0]);
     }
     
-    // Select best hit using continuity
+    // Select best hit using continuity or outermost
     const hit = this._selectBestHit(intersects, previousPoint);
     return this._processHit(hit);
   }
@@ -288,14 +253,6 @@ export class ScalpSurface {
    * Uses robust raycasting: from headCenter through targetPos to find surface
    */
   snapToTarget(targetPos, offset = MOVEMENT_CONFIG.scalpOffset) {
-    console.log('[ScalpSurface] snapToTarget called:', {
-      targetPos: targetPos.toArray(),
-      offset,
-      isReady: this.isReady,
-      hasMesh: !!this.surfaceMesh,
-      headCenter: this.headCenter?.toArray(),
-    });
-    
     if (!this.isReady) {
       console.warn('[ScalpSurface] Not ready for snap');
       return null;
@@ -305,19 +262,11 @@ export class ScalpSurface {
     this._lastSurfacePoint = null;
     
     // Strategy: Cast ray from headCenter THROUGH targetPos
-    // This ensures we find the surface point closest to target
     const direction = this._direction.subVectors(targetPos, this.headCenter).normalize();
-    
-    console.log('[ScalpSurface] Raycasting:', {
-      from: this.headCenter.toArray(),
-      direction: direction.toArray(),
-    });
     
     // Cast from head center outward
     this.raycaster.set(this.headCenter, direction);
     let intersects = this.raycaster.intersectObject(this.surfaceMesh, false);
-    
-    console.log('[ScalpSurface] Center-out raycast hits:', intersects.length);
     
     if (intersects.length === 0) {
       // Fallback: cast from far outside toward headCenter
@@ -326,10 +275,8 @@ export class ScalpSurface {
       this.raycaster.set(this._farPoint, this._tempVec);
       intersects = this.raycaster.intersectObject(this.surfaceMesh, false);
       
-      console.log('[ScalpSurface] Outside-in raycast hits:', intersects.length);
-      
       if (intersects.length === 0) {
-        console.warn('[ScalpSurface] Snap failed - no intersection on ray through target');
+        console.warn('[ScalpSurface] Snap failed - no intersection');
         // Last resort: use generic findSurfacePoint
         const surface = this.findSurfacePoint(targetPos, null);
         if (!surface) {

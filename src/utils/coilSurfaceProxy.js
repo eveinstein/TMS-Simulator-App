@@ -23,100 +23,124 @@ import * as THREE from 'three';
 export function computeFiducialPlane(fiducials, headMesh = null) {
   const { Nasion, Inion, LPA, RPA } = fiducials || {};
   
-  if (!Nasion || !Inion || !LPA || !RPA) {
-    console.warn('[CoilProxy] Missing fiducials, deriving from head mesh');
+  // Check if we have valid fiducials
+  const hasValidFiducials = Nasion && Inion && LPA && RPA;
+  
+  if (hasValidFiducials) {
+    // Sanity check: compute distances
+    const nasionInionDist = Nasion.distanceTo(Inion);
+    const lpaRpaDist = LPA.distanceTo(RPA);
     
-    // If we have a head mesh, use its bounding sphere
-    if (headMesh && headMesh.geometry) {
-      // CRITICAL: Update matrix world before computing bounds
-      headMesh.updateMatrixWorld(true);
+    console.log('[CoilProxy] Fiducial sanity check:', {
+      'Nasion-Inion': nasionInionDist.toFixed(4),
+      'LPA-RPA': lpaRpaDist.toFixed(4),
+    });
+    
+    // If distances are too small, fiducials are degenerate
+    if (nasionInionDist < 0.03 || lpaRpaDist < 0.03) {
+      console.error('[CoilProxy] Fiducials are degenerate (distances too small)!');
+      console.error('  Nasion:', Nasion.toArray().map(v => v.toFixed(4)));
+      console.error('  Inion:', Inion.toArray().map(v => v.toFixed(4)));
+      console.error('  LPA:', LPA.toArray().map(v => v.toFixed(4)));
+      console.error('  RPA:', RPA.toArray().map(v => v.toFixed(4)));
+      // Fall through to head mesh fallback
+    } else {
+      // Valid fiducials - compute plane normally
+      const origin = new THREE.Vector3()
+        .add(Nasion).add(Inion).add(LPA).add(RPA)
+        .multiplyScalar(0.25);
       
-      headMesh.geometry.computeBoundingSphere();
-      const sphere = headMesh.geometry.boundingSphere;
+      // Use Inion-Nasion direction for more stable basis (engineer recommendation)
+      const anteriorDir = new THREE.Vector3().subVectors(Nasion, Inion);
+      const lateralDir = new THREE.Vector3().subVectors(LPA, RPA);
+      const n = new THREE.Vector3().crossVectors(anteriorDir, lateralDir).normalize();
       
-      if (sphere) {
-        // Get world-space center
-        const worldCenter = sphere.center.clone();
-        worldCenter.applyMatrix4(headMesh.matrixWorld);
+      if (n.y < 0) n.negate();
+      
+      // u = projection of (Nasion - Inion) onto plane
+      const u = anteriorDir.sub(n.clone().multiplyScalar(anteriorDir.dot(n))).normalize();
+      const v = new THREE.Vector3().crossVectors(n, u).normalize();
+      
+      // Compute base radius
+      const points = [Nasion, Inion, LPA, RPA];
+      let totalRadius = 0;
+      for (const p of points) {
+        const rel = new THREE.Vector3().subVectors(p, origin);
+        const px = rel.dot(u);
+        const py = rel.dot(v);
+        totalRadius += Math.sqrt(px * px + py * py);
+      }
+      const baseRadius = totalRadius / 4;
+      
+      // Final sanity check on radius
+      if (baseRadius < 0.03) {
+        console.error(`[CoilProxy] Computed baseRadius ${baseRadius.toFixed(4)} is too small!`);
+        // Fall through to head mesh fallback
+      } else {
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, origin);
         
-        // Use world-space radius (account for scale)
-        const scale = new THREE.Vector3();
-        headMesh.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
-        const worldRadius = sphere.radius * Math.max(scale.x, scale.y, scale.z);
-        
-        console.log('[CoilProxy] Using head mesh bounds:', {
-          center: worldCenter.toArray().map(v => v.toFixed(4)),
-          radius: worldRadius.toFixed(4),
+        console.log('[CoilProxy] Fiducial plane computed:', {
+          Nasion: Nasion.toArray().map(v => v.toFixed(4)),
+          Inion: Inion.toArray().map(v => v.toFixed(4)),
+          LPA: LPA.toArray().map(v => v.toFixed(4)),
+          RPA: RPA.toArray().map(v => v.toFixed(4)),
+          origin: origin.toArray().map(v => v.toFixed(4)),
+          normal: n.toArray().map(v => v.toFixed(4)),
+          baseRadius: baseRadius.toFixed(4),
         });
         
-        return {
-          plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -worldCenter.y),
-          origin: worldCenter.clone(),
-          u: new THREE.Vector3(1, 0, 0),
-          v: new THREE.Vector3(0, 0, 1),
-          n: new THREE.Vector3(0, 1, 0),
-          baseRadius: worldRadius,
-        };
+        return { plane, origin, u, v, n, baseRadius };
       }
     }
+  }
+  
+  // FALLBACK: Use head mesh bounding sphere
+  console.warn('[CoilProxy] Using head mesh fallback for plane computation');
+  
+  if (headMesh && headMesh.geometry) {
+    headMesh.updateMatrixWorld(true);
+    headMesh.geometry.computeBoundingSphere();
+    const sphere = headMesh.geometry.boundingSphere;
     
-    // Ultimate fallback - generic values
-    console.warn('[CoilProxy] No head mesh, using generic fallback');
-    return {
-      plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
-      origin: new THREE.Vector3(0, 0.05, 0),
-      u: new THREE.Vector3(1, 0, 0),
-      v: new THREE.Vector3(0, 0, 1),
-      n: new THREE.Vector3(0, 1, 0),
-      baseRadius: 0.1,
-    };
+    if (sphere && sphere.radius > 0) {
+      // Transform center to world space
+      const worldCenter = sphere.center.clone().applyMatrix4(headMesh.matrixWorld);
+      
+      // Get world-space radius
+      const scale = new THREE.Vector3();
+      headMesh.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+      const worldRadius = sphere.radius * Math.max(scale.x, scale.y, scale.z);
+      
+      // Use 55% of head radius as base radius (typical fiducial plane)
+      const baseRadius = worldRadius * 0.55;
+      
+      console.log('[CoilProxy] Head mesh fallback:', {
+        worldCenter: worldCenter.toArray().map(v => v.toFixed(4)),
+        worldRadius: worldRadius.toFixed(4),
+        baseRadius: baseRadius.toFixed(4),
+      });
+      
+      return {
+        plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -worldCenter.y),
+        origin: worldCenter.clone(),
+        u: new THREE.Vector3(1, 0, 0),
+        v: new THREE.Vector3(0, 0, 1),
+        n: new THREE.Vector3(0, 1, 0),
+        baseRadius: baseRadius,
+      };
+    }
   }
   
-  // Compute centroid
-  const origin = new THREE.Vector3()
-    .add(Nasion).add(Inion).add(LPA).add(RPA)
-    .multiplyScalar(0.25);
-  
-  // Compute plane normal using cross product of two spanning vectors
-  const v1 = new THREE.Vector3().subVectors(Nasion, Inion);
-  const v2 = new THREE.Vector3().subVectors(LPA, RPA);
-  const n = new THREE.Vector3().crossVectors(v1, v2).normalize();
-  
-  // Ensure normal points upward (positive Y component)
-  if (n.y < 0) n.negate();
-  
-  // Create orthonormal basis on the plane
-  // u points toward Nasion (anterior direction)
-  const toNasion = new THREE.Vector3().subVectors(Nasion, origin);
-  const u = toNasion.sub(n.clone().multiplyScalar(toNasion.dot(n))).normalize();
-  const v = new THREE.Vector3().crossVectors(n, u).normalize();
-  
-  // Compute base radius (mean distance of fiducials from origin in plane coords)
-  const points = [Nasion, Inion, LPA, RPA];
-  let totalRadius = 0;
-  for (const p of points) {
-    const rel = new THREE.Vector3().subVectors(p, origin);
-    const px = rel.dot(u);
-    const py = rel.dot(v);
-    totalRadius += Math.sqrt(px * px + py * py);
-  }
-  const baseRadius = totalRadius / 4;
-  
-  // Create THREE.Plane
-  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, origin);
-  
-  // Always log fiducial plane info for debugging
-  console.log('[CoilProxy] Fiducial plane computed:', {
-    Nasion: Nasion.toArray().map(v => v.toFixed(4)),
-    Inion: Inion.toArray().map(v => v.toFixed(4)),
-    LPA: LPA.toArray().map(v => v.toFixed(4)),
-    RPA: RPA.toArray().map(v => v.toFixed(4)),
-    origin: origin.toArray().map(v => v.toFixed(4)),
-    normal: n.toArray().map(v => v.toFixed(4)),
-    baseRadius: baseRadius.toFixed(4),
-  });
-  
-  return { plane, origin, u, v, n, baseRadius };
+  // Ultimate fallback - should never reach here
+  console.error('[CoilProxy] No valid fiducials AND no valid head mesh! Using emergency defaults.');
+  return {
+    plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
+    origin: new THREE.Vector3(0, 0.1, 0),
+    u: new THREE.Vector3(1, 0, 0),
+    v: new THREE.Vector3(0, 0, 1),
+    n: new THREE.Vector3(0, 1, 0),
+    baseRadius: 0.08, // Reasonable default for normalized head
+  };
 }
 
 /**

@@ -142,22 +142,30 @@ export function validateRadiologicConvention(targets) {
   const errors = [];
   const isDev = import.meta.env.DEV;
   
+  // Helper to get position as array
+  const posToArray = (pos) => {
+    if (Array.isArray(pos)) return pos;
+    if (pos && typeof pos.x === 'number') return [pos.x, pos.y, pos.z];
+    return [0, 0, 0];
+  };
+  
   // Left hemisphere targets should have positive X
   const leftTargets = ['F3', 'C3'];
   for (const name of leftTargets) {
     if (targets[name]) {
       const pos = targets[name];
-      const x = Array.isArray(pos) ? pos[0] : pos.x;
+      const coords = posToArray(pos);
+      const x = coords[0];
       if (x <= 0) {
-        const msg = `[RADIOLOGIC VIOLATION] ${name} has X=${x.toFixed(3)} (expected > 0 for patient LEFT)`;
+        const msg = `[RADIOLOGIC VIOLATION] ${name} has X=${x.toFixed(4)} (expected > 0 for patient LEFT)`;
         errors.push(msg);
         if (isDev) {
           console.error(msg);
-          // DEV-MODE ASSERTION
+          console.error(`  Full coords: (${coords.map(v => v.toFixed(4)).join(', ')})`);
           console.assert(x > 0, msg);
         }
       } else if (isDev) {
-        console.log(`[Validation] ✓ ${name} X=${x.toFixed(3)} (correct: patient LEFT = +X)`);
+        console.log(`[Validation] ✓ ${name} X=${x.toFixed(4)} (correct: patient LEFT = +X)`);
       }
     }
   }
@@ -167,17 +175,18 @@ export function validateRadiologicConvention(targets) {
   for (const name of rightTargets) {
     if (targets[name]) {
       const pos = targets[name];
-      const x = Array.isArray(pos) ? pos[0] : pos.x;
+      const coords = posToArray(pos);
+      const x = coords[0];
       if (x >= 0) {
-        const msg = `[RADIOLOGIC VIOLATION] ${name} has X=${x.toFixed(3)} (expected < 0 for patient RIGHT)`;
+        const msg = `[RADIOLOGIC VIOLATION] ${name} has X=${x.toFixed(4)} (expected < 0 for patient RIGHT)`;
         errors.push(msg);
         if (isDev) {
           console.error(msg);
-          // DEV-MODE ASSERTION
+          console.error(`  Full coords: (${coords.map(v => v.toFixed(4)).join(', ')})`);
           console.assert(x < 0, msg);
         }
       } else if (isDev) {
-        console.log(`[Validation] ✓ ${name} X=${x.toFixed(3)} (correct: patient RIGHT = -X)`);
+        console.log(`[Validation] ✓ ${name} X=${x.toFixed(4)} (correct: patient RIGHT = -X)`);
       }
     }
   }
@@ -185,18 +194,26 @@ export function validateRadiologicConvention(targets) {
   // SMA should be near midline
   if (targets['SMA']) {
     const pos = targets['SMA'];
-    const x = Array.isArray(pos) ? pos[0] : pos.x;
+    const coords = posToArray(pos);
+    const x = coords[0];
     if (Math.abs(x) > 0.02) {
       if (isDev) {
-        console.log(`[Validation] ⚠ SMA X=${x.toFixed(3)} (expected near 0 for midline)`);
+        console.log(`[Validation] ⚠ SMA X=${x.toFixed(4)} (expected near 0 for midline)`);
+        console.log(`  Full coords: (${coords.map(v => v.toFixed(4)).join(', ')})`);
       }
     } else if (isDev) {
-      console.log(`[Validation] ✓ SMA X=${x.toFixed(3)} (correct: midline)`);
+      console.log(`[Validation] ✓ SMA X=${x.toFixed(4)} (correct: midline)`);
     }
   }
   
   if (errors.length > 0) {
     console.error('[Validation] RADIOLOGIC CONVENTION ERRORS:', errors);
+    // Print all target positions for debugging
+    console.error('[Validation] All target positions:');
+    for (const [name, pos] of Object.entries(targets)) {
+      const coords = posToArray(pos);
+      console.error(`  ${name}: (${coords.map(v => v.toFixed(4)).join(', ')})`);
+    }
   } else if (isDev) {
     console.log('[Validation] ✓ All targets pass radiologic convention check');
   }

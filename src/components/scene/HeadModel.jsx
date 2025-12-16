@@ -135,6 +135,15 @@ export function HeadModel({ onHeadMeshReady, onFiducialsReady, onTargetClick, se
           if (name.includes(targetName.toUpperCase())) {
             const worldPos = new THREE.Vector3();
             child.getWorldPosition(worldPos);
+            
+            // Debug: log local vs world position
+            console.log(`[HeadModel] Target ${targetName} (${child.name}):`, {
+              local: [child.position.x.toFixed(4), child.position.y.toFixed(4), child.position.z.toFixed(4)],
+              world: [worldPos.x.toFixed(4), worldPos.y.toFixed(4), worldPos.z.toFixed(4)],
+              hasParent: !!child.parent,
+              parentName: child.parent?.name,
+            });
+            
             extractedTargets[targetName] = worldPos;
           }
         }

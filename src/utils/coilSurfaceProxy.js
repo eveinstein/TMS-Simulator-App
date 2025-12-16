@@ -105,13 +105,16 @@ export function computeFiducialPlane(fiducials, headMesh = null) {
   // Create THREE.Plane
   const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, origin);
   
-  if (import.meta.env.DEV) {
-    console.log('[CoilProxy] Fiducial plane computed:', {
-      origin: `(${origin.x.toFixed(3)}, ${origin.y.toFixed(3)}, ${origin.z.toFixed(3)})`,
-      normal: `(${n.x.toFixed(3)}, ${n.y.toFixed(3)}, ${n.z.toFixed(3)})`,
-      baseRadius: baseRadius.toFixed(4),
-    });
-  }
+  // Always log fiducial plane info for debugging
+  console.log('[CoilProxy] Fiducial plane computed:', {
+    Nasion: Nasion.toArray().map(v => v.toFixed(4)),
+    Inion: Inion.toArray().map(v => v.toFixed(4)),
+    LPA: LPA.toArray().map(v => v.toFixed(4)),
+    RPA: RPA.toArray().map(v => v.toFixed(4)),
+    origin: origin.toArray().map(v => v.toFixed(4)),
+    normal: n.toArray().map(v => v.toFixed(4)),
+    baseRadius: baseRadius.toFixed(4),
+  });
   
   return { plane, origin, u, v, n, baseRadius };
 }
@@ -256,6 +259,13 @@ export function buildCoilProxySurface({
   // Compute head center from head mesh (CRITICAL for raycasting)
   let headCenter = origin.clone(); // Default to fiducial plane origin
   
+  console.log('[CoilProxy] Building with:', {
+    origin: origin.toArray().map(v => v.toFixed(4)),
+    baseRadius: baseRadius.toFixed(4),
+    domeRadius: domeRadius.toFixed(4),
+    hasHeadMesh: !!headMesh,
+  });
+  
   // Shrinkwrap: project vertices onto head mesh
   if (headMesh) {
     headMesh.updateMatrixWorld(true);
@@ -268,6 +278,11 @@ export function buildCoilProxySurface({
       const sphere = headMesh.geometry.boundingSphere;
       if (sphere) {
         headCenter = sphere.center.clone().applyMatrix4(headMesh.matrixWorld);
+        console.log('[CoilProxy] Head mesh bounds:', {
+          localCenter: sphere.center.toArray().map(v => v.toFixed(4)),
+          worldCenter: headCenter.toArray().map(v => v.toFixed(4)),
+          radius: sphere.radius.toFixed(4),
+        });
       }
     }
     
@@ -361,14 +376,22 @@ export function buildCoilProxySurface({
     headCenter: headCenter.clone(), // CRITICAL: Store for ScalpSurface raycasting
   };
   
-  if (import.meta.env.DEV) {
-    console.log('[CoilProxy] Proxy mesh built:', {
-      vertices: vertexCount,
-      domeRadius: domeRadius.toFixed(4),
-      baseRadius: baseRadius.toFixed(4),
-      offset: offset.toFixed(4),
-    });
-  }
+  // Always log final proxy info
+  console.log('[CoilProxy] Proxy mesh built:', {
+    vertices: vertexCount,
+    domeRadius: domeRadius.toFixed(4),
+    baseRadius: baseRadius.toFixed(4),
+    offset: offset.toFixed(4),
+    headCenter: headCenter.toArray().map(v => v.toFixed(4)),
+    boundingBox: geometry.boundingBox ? {
+      min: geometry.boundingBox.min.toArray().map(v => v.toFixed(4)),
+      max: geometry.boundingBox.max.toArray().map(v => v.toFixed(4)),
+    } : 'none',
+    boundingSphere: geometry.boundingSphere ? {
+      center: geometry.boundingSphere.center.toArray().map(v => v.toFixed(4)),
+      radius: geometry.boundingSphere.radius.toFixed(4),
+    } : 'none',
+  });
   
   return mesh;
 }

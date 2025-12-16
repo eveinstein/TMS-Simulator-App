@@ -102,16 +102,42 @@ export class ScalpSurface {
    */
   findSurfacePoint(targetPos, previousPoint = null) {
     if (!this.isReady || !this.surfaceMesh) {
-      if (DEBUG_RAYCAST) console.warn('[ScalpSurface] Not ready');
+      console.warn('[ScalpSurface] Not ready for findSurfacePoint');
       return null;
+    }
+    
+    // Log geometry info on first call
+    if (!this._loggedGeometry) {
+      this._loggedGeometry = true;
+      const geo = this.surfaceMesh.geometry;
+      geo.computeBoundingBox();
+      geo.computeBoundingSphere();
+      console.log('[ScalpSurface] Geometry info:', {
+        vertices: geo.getAttribute('position')?.count,
+        boundingBox: geo.boundingBox ? {
+          min: geo.boundingBox.min.toArray().map(v => v.toFixed(4)),
+          max: geo.boundingBox.max.toArray().map(v => v.toFixed(4)),
+        } : 'none',
+        boundingSphere: geo.boundingSphere ? {
+          center: geo.boundingSphere.center.toArray().map(v => v.toFixed(4)),
+          radius: geo.boundingSphere.radius.toFixed(4),
+        } : 'none',
+        headCenter: this.headCenter.toArray().map(v => v.toFixed(4)),
+      });
     }
     
     // Direction from head center to target
     this._direction.subVectors(targetPos, this.headCenter);
     const distToCenter = this._direction.length();
     
+    console.log('[ScalpSurface] findSurfacePoint:', {
+      targetPos: targetPos.toArray().map(v => v.toFixed(4)),
+      headCenter: this.headCenter.toArray().map(v => v.toFixed(4)),
+      distToCenter: distToCenter.toFixed(4),
+    });
+    
     if (distToCenter < 0.001) {
-      if (DEBUG_RAYCAST) console.warn('[ScalpSurface] Target at head center');
+      console.warn('[ScalpSurface] Target at head center');
       return null;
     }
     
@@ -121,9 +147,11 @@ export class ScalpSurface {
     this.raycaster.set(this.headCenter, this._direction);
     let intersects = this.raycaster.intersectObject(this.surfaceMesh, false);
     
-    if (DEBUG_RAYCAST && intersects.length > 0) {
-      console.log('[Raycast] Center-out hits:', intersects.length);
-    }
+    console.log('[ScalpSurface] Center-out raycast:', {
+      from: this.headCenter.toArray().map(v => v.toFixed(4)),
+      direction: this._direction.toArray().map(v => v.toFixed(4)),
+      hits: intersects.length,
+    });
     
     // If no hits, try reverse ray (from outside looking in)
     if (intersects.length === 0) {
@@ -132,12 +160,13 @@ export class ScalpSurface {
       this.raycaster.set(this._farPoint, this._tempVec);
       intersects = this.raycaster.intersectObject(this.surfaceMesh, false);
       
-      if (DEBUG_RAYCAST && intersects.length > 0) {
-        console.log('[Raycast] Reverse ray hits:', intersects.length);
-      }
+      console.log('[ScalpSurface] Reverse raycast:', {
+        from: this._farPoint.toArray().map(v => v.toFixed(4)),
+        hits: intersects.length,
+      });
       
       if (intersects.length === 0) {
-        if (DEBUG_RAYCAST) console.warn('[ScalpSurface] No surface hit');
+        console.warn('[ScalpSurface] No surface hit from either direction');
         return null;
       }
       

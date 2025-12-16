@@ -1,18 +1,20 @@
 /**
  * TMSCoil.jsx
  * ===========
- * TMS coil component with surface-constrained movement.
+ * TMS coil component with surface-constrained movement using spherical ghost coordinates.
  * 
- * Features:
- * - WASD/Arrow keys for movement along scalp
- * - Q/E for yaw rotation around surface normal
- * - R/F for pitch tilt
- * - Shift+drag to reposition with mouse
- * - Snap-to-target on selection
- * - Reset to Cz (center) position
+ * MOVEMENT SYSTEM:
+ * - Ghost yaw/pitch: Spherical coordinates on head surface
+ * - WASD/Arrows: Move ghost position (independent of camera view)
+ * - Q/E: Rotate coil around surface normal (twist)
+ * - R/F: Tilt coil forward/back
+ * - Commit-on-hit: Ghost only moves when raycast succeeds (perfect boundary)
+ * - Smooth transforms: Position and rotation are interpolated for smooth motion
  * 
- * IMPORTANT: This component REQUIRES the proxy mesh for smooth movement.
- * It will wait for proxyMesh prop before initializing.
+ * KEY INSIGHT:
+ * The coil's movement is defined in head-local spherical coordinates,
+ * not camera-relative XZ. This means WASD always does the same thing
+ * regardless of where the camera is looking.
  */
 
 import React, { useRef, useMemo, useEffect, useCallback, useState } from 'react';
@@ -22,17 +24,18 @@ import { useTMSStore } from '../../stores/tmsStore';
 import { normalizeModelScale } from '../../utils/scaleNormalization';
 import { 
   ScalpSurface, 
-  keysToMoveDirection, 
-  calculateCoilOrientation,
-  clampPitch,
+  ghostToRay,
+  worldToGhost,
+  keysToGhostDelta,
+  buildStableCoilOrientation,
+  clampGhostPitch,
+  clampTilt,
   MOVEMENT_CONFIG,
-  buildFiducialBoundary,
-  constrainToBoundary
 } from '../../utils/surfaceMovement';
 import * as THREE from 'three';
 
-// Debug flag - enables verbose logging
-const DEBUG_COIL = false;
+// Debug flag - enabled in development mode only (toggle with VITE_DEBUG_COIL=true)
+const DEBUG_COIL = import.meta.env.DEV && import.meta.env.VITE_DEBUG_COIL === 'true';
 
 /**
  * Normalize coil pivot so contact surface is at local origin
@@ -66,35 +69,44 @@ function validateCoilScale(scene) {
 export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
   const groupRef = useRef();
   const scalpSurfaceRef = useRef(null);
-  const boundaryRef = useRef(null);
   
   // State
   const [isReady, setIsReady] = useState(false);
   const [effectiveOffset, setEffectiveOffset] = useState(MOVEMENT_CONFIG.scalpOffset);
   
-  // Build fiducial boundary when fiducials are available
-  useEffect(() => {
-    if (fiducials) {
-      boundaryRef.current = buildFiducialBoundary(fiducials);
-      if (boundaryRef.current) {
-        console.log('[TMSCoil] Fiducial boundary built');
-      }
-    }
-  }, [fiducials]);
+  // Ghost state: spherical coordinates for movement
+  const ghostRef = useRef({
+    yaw: 0,           // Rotation around head Y axis
+    pitch: Math.PI/4, // Elevation from horizontal (start ~45° = top-front)
+    twistYaw: 0,      // Coil rotation around surface normal (Q/E)
+    tiltPitch: 0,     // Coil tilt forward/back (R/F)
+  });
   
-  // Refs for mutable state (avoid re-renders)
+  // Target state: what we're interpolating toward
+  const targetRef = useRef({
+    position: new THREE.Vector3(0, 0.15, 0),
+    normal: new THREE.Vector3(0, 1, 0),
+    quaternion: new THREE.Quaternion(),
+  });
+  
+  // Smoothed display state: what's actually rendered
+  const smoothedRef = useRef({
+    position: new THREE.Vector3(0, 0.15, 0),
+    quaternion: new THREE.Quaternion(),
+  });
+  
+  // Computed head geometry
+  const headGeomRef = useRef({
+    center: new THREE.Vector3(0, 0.08, 0),
+    radius: 0.12,
+  });
+  
+  // Keyboard state
   const keysRef = useRef({
     w: false, a: false, s: false, d: false,
     arrowup: false, arrowdown: false, arrowleft: false, arrowright: false,
     q: false, e: false,
     r: false, f: false,
-  });
-  
-  const coilStateRef = useRef({
-    position: new THREE.Vector3(0, 0.15, 0),
-    normal: new THREE.Vector3(0, 1, 0),
-    yaw: 0,
-    pitch: 0,
   });
   
   // Snap guard - prevents re-entrancy
@@ -103,8 +115,11 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
   
   // Proximity tracking with hysteresis
   const lastHoverTargetRef = useRef(null);
-  const PROXIMITY_ENTER = 0.015; // 15mm - enter zone
-  const PROXIMITY_EXIT = 0.020;  // 20mm - exit zone (hysteresis)
+  const PROXIMITY_ENTER = 0.015;
+  const PROXIMITY_EXIT = 0.020;
+  
+  // Track if currently snapped to SMA (needs 180° handle flip per clinical convention)
+  const isSMASnappedRef = useRef(false);
   
   // Three.js context
   const { camera, gl } = useThree();
@@ -121,8 +136,6 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
   const firePulse = useTMSStore(s => s.firePulse);
   const targetPositions = useTMSStore(s => s.targetPositions);
   const coilResetTrigger = useTMSStore(s => s.coilResetTrigger);
-  
-  // Note: snapRequest is polled directly in useFrame via useTMSStore.getState()
   
   // Process coil model once
   const clonedScene = useMemo(() => {
@@ -150,77 +163,104 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
     }
   }, [clonedScene]);
   
-  // Track if currently snapped to SMA (needs 180° handle flip per clinical convention)
-  const isSMASnappedRef = useRef(false);
-  
   /**
-   * Update Three.js transform from internal state
-   * Applies 180° flip for SMA only (clinical convention: handle points -Z at SMA)
+   * Project ghost coordinates to surface and update targets
+   * Returns true if successful (hit found)
    */
-  const updateTransform = useCallback(() => {
-    const state = coilStateRef.current;
-    const quat = calculateCoilOrientation(state.normal, state.yaw, state.pitch);
+  const projectGhostToSurface = useCallback((yaw, pitch) => {
+    if (!scalpSurfaceRef.current) return false;
     
-    // Apply 180° flip around local up (normal) ONLY for SMA target
-    if (isSMASnappedRef.current) {
-      const flipQuat = new THREE.Quaternion().setFromAxisAngle(state.normal, Math.PI);
-      quat.multiply(flipQuat);
+    const { center, radius } = headGeomRef.current;
+    const ray = ghostToRay(yaw, pitch, center, radius + 0.1);
+    
+    // Raycast against proxy surface
+    const raycaster = new THREE.Raycaster();
+    raycaster.set(ray.origin, ray.direction);
+    const intersects = raycaster.intersectObject(scalpSurfaceRef.current.surfaceMesh, false);
+    
+    if (intersects.length === 0) {
+      return false;
     }
     
-    setCoilPosition([state.position.x, state.position.y, state.position.z]);
-    setCoilRotation([quat.x, quat.y, quat.z, quat.w]);
+    // Use first hit (outermost from our external ray)
+    const hit = intersects[0];
     
-    onCoilMove?.(state.position, state.normal);
-  }, [setCoilPosition, setCoilRotation, onCoilMove]);
+    // Get normal and ensure it points outward
+    const normal = hit.face.normal.clone();
+    normal.transformDirection(scalpSurfaceRef.current.surfaceMesh.matrixWorld);
+    normal.normalize();
+    
+    // Force outward
+    const outward = new THREE.Vector3()
+      .subVectors(hit.point, center)
+      .normalize();
+    if (normal.dot(outward) < 0) {
+      normal.negate();
+    }
+    
+    // Update targets
+    targetRef.current.position.copy(hit.point).addScaledVector(normal, effectiveOffset);
+    targetRef.current.normal.copy(normal);
+    
+    // Compute orientation
+    const ghost = ghostRef.current;
+    
+    // Reference direction: -Z world (posterior)
+    // This makes the handle point backward by default (clinical convention)
+    const refPosterior = new THREE.Vector3(0, 0, -1);
+    
+    // User twist from Q/E controls
+    const userTwist = ghost.twistYaw;
+    
+    targetRef.current.quaternion.copy(
+      buildStableCoilOrientation(normal, refPosterior, userTwist, ghost.tiltPitch)
+    );
+    
+    return true;
+  }, [effectiveOffset]);
   
   /**
    * Snap coil to a target position
    */
   const snapToPosition = useCallback((targetVec) => {
-    console.log('[TMSCoil] snapToPosition called:', {
-      targetVec: targetVec.toArray(),
-      hasScalpSurface: !!scalpSurfaceRef.current,
-      effectiveOffset,
-    });
-    
-    if (!scalpSurfaceRef.current) {
-      console.error('[TMSCoil] No scalp surface!');
-      return false;
+    if (DEBUG_COIL) {
+      console.log('[TMSCoil] snapToPosition:', targetVec.toArray());
     }
     
-    const stateBefore = { ...coilStateRef.current };
-    console.log('[TMSCoil] State before snap:', {
-      position: stateBefore.position.toArray(),
-      normal: stateBefore.normal.toArray(),
-    });
+    if (!scalpSurfaceRef.current) return false;
     
-    const result = scalpSurfaceRef.current.snapToTarget(targetVec, effectiveOffset);
-    console.log('[TMSCoil] snapToTarget returned:', result);
+    // Convert world position to ghost coordinates
+    const { center } = headGeomRef.current;
+    const { yaw, pitch } = worldToGhost(targetVec, center);
     
-    if (!result) {
-      console.error('[TMSCoil] snapToTarget failed');
-      return false;
+    // Clamp pitch
+    const clampedPitch = clampGhostPitch(pitch);
+    
+    // Project to surface
+    if (projectGhostToSurface(yaw, clampedPitch)) {
+      // Commit ghost state
+      ghostRef.current.yaw = yaw;
+      ghostRef.current.pitch = clampedPitch;
+      ghostRef.current.twistYaw = 0;
+      ghostRef.current.tiltPitch = 0;
+      
+      // Immediately snap smoothed to target (no interpolation for direct snap)
+      smoothedRef.current.position.copy(targetRef.current.position);
+      smoothedRef.current.quaternion.copy(targetRef.current.quaternion);
+      
+      // Update store
+      const pos = smoothedRef.current.position;
+      const quat = smoothedRef.current.quaternion;
+      setCoilPosition([pos.x, pos.y, pos.z]);
+      setCoilRotation([quat.x, quat.y, quat.z, quat.w]);
+      
+      onCoilMove?.(pos, targetRef.current.normal);
+      
+      return true;
     }
     
-    const state = coilStateRef.current;
-    state.position.copy(result.position);
-    state.normal.copy(result.normal);
-    state.yaw = 0;
-    state.pitch = 0;
-    
-    console.log('[TMSCoil] State after snap:', {
-      position: state.position.toArray(),
-      normal: state.normal.toArray(),
-    });
-    
-    // Clear continuity after snap
-    scalpSurfaceRef.current.clearContinuity();
-    
-    updateTransform();
-    console.log('[TMSCoil] updateTransform called');
-    
-    return true;
-  }, [effectiveOffset, updateTransform]);
+    return false;
+  }, [projectGhostToSurface, setCoilPosition, setCoilRotation, onCoilMove]);
   
   /**
    * Reset coil to center (Cz position)
@@ -253,28 +293,43 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
     surface.setMesh(proxyMesh);
     scalpSurfaceRef.current = surface;
     
-    // Find initial position at top of head
-    const startPos = new THREE.Vector3(0, 0.2, 0);
-    const initial = surface.findSurfacePoint(startPos, null);
+    // Compute head geometry from proxy mesh
+    proxyMesh.geometry.computeBoundingSphere();
+    const sphere = proxyMesh.geometry.boundingSphere;
+    if (sphere) {
+      headGeomRef.current.center.copy(sphere.center);
+      headGeomRef.current.center.applyMatrix4(proxyMesh.matrixWorld);
+      headGeomRef.current.radius = sphere.radius;
+    }
     
-    if (initial) {
-      const state = coilStateRef.current;
-      state.position.copy(initial.point).addScaledVector(initial.normal, effectiveOffset);
-      state.normal.copy(initial.normal);
-      state.yaw = 0;
-      state.pitch = 0;
+    // Use stored head center if available (more accurate)
+    if (proxyMesh.userData?.headCenter) {
+      headGeomRef.current.center.copy(proxyMesh.userData.headCenter);
+    }
+    
+    // Initialize ghost to top-front of head
+    ghostRef.current.yaw = 0;
+    ghostRef.current.pitch = Math.PI / 4;
+    
+    // Project initial position
+    if (projectGhostToSurface(ghostRef.current.yaw, ghostRef.current.pitch)) {
+      smoothedRef.current.position.copy(targetRef.current.position);
+      smoothedRef.current.quaternion.copy(targetRef.current.quaternion);
       
-      updateTransform();
+      const pos = smoothedRef.current.position;
+      const quat = smoothedRef.current.quaternion;
+      setCoilPosition([pos.x, pos.y, pos.z]);
+      setCoilRotation([quat.x, quat.y, quat.z, quat.w]);
+      
       setIsReady(true);
-      
-      console.log('[TMSCoil] Ready at:', state.position.toArray().map(v => v.toFixed(4)));
+      console.log('[TMSCoil] Ready at:', pos.toArray().map(v => v.toFixed(4)));
     } else {
       console.error('[TMSCoil] Failed to find initial surface point');
     }
-  }, [proxyMesh, effectiveOffset, updateTransform, isReady]);
+  }, [proxyMesh, effectiveOffset, projectGhostToSurface, setCoilPosition, setCoilRotation, isReady]);
   
   // ============================================================================
-  // RESET TRIGGER - Fires when coilResetTrigger increments
+  // RESET TRIGGER
   // ============================================================================
   const lastResetTrigger = useRef(0);
   useEffect(() => {
@@ -302,7 +357,7 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
         e.preventDefault();
         if (rmt.hotspotPosition) {
           const hotspot = new THREE.Vector3(...rmt.hotspotPosition);
-          const dist = coilStateRef.current.position.distanceTo(hotspot) * 1000;
+          const dist = smoothedRef.current.position.distanceTo(hotspot) * 1000;
           firePulse(dist);
         }
       }
@@ -325,10 +380,13 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
   }, [mode, rmt.phase, rmt.hotspotPosition, firePulse]);
   
   // ============================================================================
-  // FRAME UPDATE - Movement loop + snap request polling
+  // FRAME UPDATE - Movement loop + smoothing + snap handling
   // ============================================================================
   useFrame((_, delta) => {
-    // Check for pending snap request FIRST (poll from store directly)
+    // Cap delta to prevent huge jumps after tab switches
+    const dt = Math.min(delta, 0.1);
+    
+    // Check for pending snap request
     const store = useTMSStore.getState();
     const { snapRequest, targetPositions: positions } = store;
     
@@ -337,143 +395,127 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
         isReady && 
         scalpSurfaceRef.current) {
       
-      console.log('[TMSCoil] Snap request detected:', {
-        key: snapRequest.key,
-        nonce: snapRequest.nonce,
-        lastNonce: lastSnapNonceRef.current,
-        hasPositions: !!positions,
-        positionKeys: positions ? Object.keys(positions) : [],
-      });
-      
       lastSnapNonceRef.current = snapRequest.nonce;
       
       if (snapRequest.key && positions) {
         const targetPos = positions[snapRequest.key];
-        console.log('[TMSCoil] Target position lookup:', {
-          key: snapRequest.key,
-          found: !!targetPos,
-          pos: targetPos,
-          posType: targetPos ? targetPos.constructor?.name : 'null',
-          isVector3: targetPos instanceof THREE.Vector3,
-        });
         
         if (targetPos) {
           snappingRef.current = true;
           
-          // CRITICAL: Ensure we have a proper Vector3
           let targetVec;
           if (targetPos instanceof THREE.Vector3) {
             targetVec = targetPos.clone();
           } else if (targetPos && typeof targetPos.x === 'number') {
             targetVec = new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z);
           } else {
-            console.error('[TMSCoil] Invalid target position format:', targetPos);
+            console.error('[TMSCoil] Invalid target position format');
             snappingRef.current = false;
             return;
           }
           
-          console.log('[TMSCoil] Snap executing:', snapRequest.key, targetVec.toArray());
-          
-          // Track if snapping to SMA (needs 180° handle flip per clinical convention)
+          // Track SMA for handle flip
           isSMASnappedRef.current = (snapRequest.key === 'SMA');
           
           const result = snapToPosition(targetVec);
-          console.log('[TMSCoil] snapToPosition result:', result);
           
           if (result) {
             console.log('[TMSCoil] Snap complete:', snapRequest.key);
             lastHoverTargetRef.current = snapRequest.key;
             store.setHoverTargetKey(snapRequest.key);
-          } else {
-            console.error('[TMSCoil] Snap failed - snapToPosition returned false/null');
           }
           
           snappingRef.current = false;
-        } else {
-          console.error('[TMSCoil] Target key not found in positions:', snapRequest.key);
         }
       }
     }
     
-    // Normal movement (skip if locked or just snapped)
-    if (isCoilLocked || !isReady || !scalpSurfaceRef.current) return;
+    // Skip movement if locked or not ready
+    if (isCoilLocked || !isReady || !scalpSurfaceRef.current) {
+      return;
+    }
     
     const keys = keysRef.current;
-    const state = coilStateRef.current;
+    const ghost = ghostRef.current;
     let moved = false;
     
-    // Keyboard movement
-    const moveDir = keysToMoveDirection(keys, camera, state.normal);
+    // === SPHERICAL GHOST MOVEMENT ===
+    const { yawDelta, pitchDelta } = keysToGhostDelta(keys);
     
-    if (moveDir.lengthSq() > 0) {
-      // Clear SMA-specific orientation when user moves away
+    if (yawDelta !== 0 || pitchDelta !== 0) {
+      // Clear SMA flip when user moves
       isSMASnappedRef.current = false;
       
-      const step = MOVEMENT_CONFIG.moveSpeed * delta;
-      const result = scalpSurfaceRef.current.moveAlongSurface(
-        state.position, moveDir, step, effectiveOffset
-      );
+      // Compute candidate ghost position
+      const candYaw = ghost.yaw + yawDelta * MOVEMENT_CONFIG.yawSpeed * dt;
+      const candPitch = clampGhostPitch(ghost.pitch + pitchDelta * MOVEMENT_CONFIG.pitchSpeed * dt);
       
-      if (result) {
-        // Apply fiducial boundary constraint
-        if (boundaryRef.current) {
-          const constrained = constrainToBoundary(
-            result.position.x, 
-            result.position.z, 
-            boundaryRef.current
-          );
-          if (constrained.clamped) {
-            // Re-project clamped XZ position back to surface
-            const clampedPos = new THREE.Vector3(constrained.x, result.position.y, constrained.z);
-            const resnap = scalpSurfaceRef.current.findSurfacePoint(clampedPos, state.position);
-            if (resnap) {
-              state.position.copy(resnap.point).addScaledVector(resnap.normal, effectiveOffset);
-              state.normal.copy(resnap.normal);
-            }
-          } else {
-            state.position.copy(result.position);
-            state.normal.copy(result.normal);
-          }
-        } else {
-          state.position.copy(result.position);
-          state.normal.copy(result.normal);
-        }
+      // COMMIT-ON-HIT: Only update if raycast succeeds
+      if (projectGhostToSurface(candYaw, candPitch)) {
+        ghost.yaw = candYaw;
+        ghost.pitch = candPitch;
         moved = true;
       }
+      // If no hit, ghost doesn't move (perfect boundary behavior)
     }
     
-    // Yaw rotation (Q/E)
+    // === COIL ORIENTATION CONTROLS ===
+    
+    // Twist (Q/E) - rotation around surface normal
     if (keys.q) {
-      state.yaw -= MOVEMENT_CONFIG.rotateSpeed * delta;
+      ghost.twistYaw -= MOVEMENT_CONFIG.rotateSpeed * dt;
       moved = true;
     }
     if (keys.e) {
-      state.yaw += MOVEMENT_CONFIG.rotateSpeed * delta;
+      ghost.twistYaw += MOVEMENT_CONFIG.rotateSpeed * dt;
       moved = true;
     }
     
-    // Pitch tilt (R/F)
+    // Tilt (R/F) - forward/back tilt
     if (keys.r) {
-      state.pitch = clampPitch(state.pitch + MOVEMENT_CONFIG.pitchSpeed * delta);
+      ghost.tiltPitch = clampTilt(ghost.tiltPitch + MOVEMENT_CONFIG.pitchTiltSpeed * dt);
       moved = true;
     }
     if (keys.f) {
-      state.pitch = clampPitch(state.pitch - MOVEMENT_CONFIG.pitchSpeed * delta);
+      ghost.tiltPitch = clampTilt(ghost.tiltPitch - MOVEMENT_CONFIG.pitchTiltSpeed * dt);
       moved = true;
     }
     
-    if (moved) {
-      updateTransform();
+    // Update orientation target if controls changed
+    if (moved && (keys.q || keys.e || keys.r || keys.f)) {
+      const refPosterior = new THREE.Vector3(0, 0, -1);
+      targetRef.current.quaternion.copy(
+        buildStableCoilOrientation(targetRef.current.normal, refPosterior, ghost.twistYaw, ghost.tiltPitch)
+      );
     }
     
-    // Proximity detection with hysteresis for educational indicator
+    // === SMOOTH INTERPOLATION ===
+    // Always interpolate toward target, even if no input (catches up from snaps)
+    const posFactor = 1 - Math.exp(-MOVEMENT_CONFIG.posDamping * dt);
+    const rotFactor = 1 - Math.exp(-MOVEMENT_CONFIG.rotDamping * dt);
+    
+    smoothedRef.current.position.lerp(targetRef.current.position, posFactor);
+    smoothedRef.current.quaternion.slerp(targetRef.current.quaternion, rotFactor);
+    
+    // Update store with smoothed values
+    const pos = smoothedRef.current.position;
+    const quat = smoothedRef.current.quaternion;
+    setCoilPosition([pos.x, pos.y, pos.z]);
+    setCoilRotation([quat.x, quat.y, quat.z, quat.w]);
+    
+    // Notify move callback
+    if (moved) {
+      onCoilMove?.(pos, targetRef.current.normal);
+    }
+    
+    // === PROXIMITY DETECTION ===
     if (positions) {
-      const coilPos = state.position;
+      const coilPos = smoothedRef.current.position;
       let nearestTarget = null;
       let nearestDist = Infinity;
       
-      for (const [name, pos] of Object.entries(positions)) {
-        const dist = coilPos.distanceTo(pos);
+      for (const [name, tpos] of Object.entries(positions)) {
+        const dist = coilPos.distanceTo(tpos);
         if (dist < nearestDist) {
           nearestDist = dist;
           nearestTarget = name;
@@ -482,20 +524,16 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
       
       const currentHover = lastHoverTargetRef.current;
       
-      // Hysteresis logic: different thresholds for enter vs exit
       if (currentHover === null) {
-        // Not hovering - check ENTER threshold
         if (nearestDist < PROXIMITY_ENTER) {
           lastHoverTargetRef.current = nearestTarget;
           store.setHoverTargetKey(nearestTarget);
         }
       } else {
-        // Currently hovering - check EXIT threshold (larger = sticky)
         if (nearestDist > PROXIMITY_EXIT) {
           lastHoverTargetRef.current = null;
           store.setHoverTargetKey(null);
         } else if (currentHover !== nearestTarget && nearestDist < PROXIMITY_ENTER) {
-          // Switched to a different nearby target
           lastHoverTargetRef.current = nearestTarget;
           store.setHoverTargetKey(nearestTarget);
         }
@@ -512,7 +550,6 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
     let isDragging = false;
     
     const handleMouseDown = (e) => {
-      // Require Shift key to avoid conflict with OrbitControls
       if (e.button === 0 && e.shiftKey && !isCoilLocked) {
         isDragging = true;
         e.preventDefault();
@@ -533,28 +570,23 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
       
-      // Raycast against proxy mesh only
       const intersects = raycaster.intersectObject(scalpSurfaceRef.current.surfaceMesh, false);
       
       if (intersects.length > 0) {
         const hit = intersects[0];
-        const state = coilStateRef.current;
         
-        // Extract normal
-        const normal = hit.face.normal.clone();
-        normal.transformDirection(scalpSurfaceRef.current.surfaceMesh.matrixWorld);
-        normal.normalize();
+        // Convert hit point to ghost coordinates
+        const { center } = headGeomRef.current;
+        const { yaw, pitch } = worldToGhost(hit.point, center);
         
-        // Force outward
-        const outward = new THREE.Vector3()
-          .subVectors(hit.point, scalpSurfaceRef.current.headCenter)
-          .normalize();
-        if (normal.dot(outward) < 0) normal.negate();
+        // Update ghost and project
+        ghostRef.current.yaw = yaw;
+        ghostRef.current.pitch = clampGhostPitch(pitch);
         
-        state.position.copy(hit.point).addScaledVector(normal, effectiveOffset);
-        state.normal.copy(normal);
+        projectGhostToSurface(ghostRef.current.yaw, ghostRef.current.pitch);
         
-        updateTransform();
+        // Clear SMA flip when dragging
+        isSMASnappedRef.current = false;
       }
     };
     
@@ -568,7 +600,7 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [camera, gl, isCoilLocked, isReady, effectiveOffset, updateTransform]);
+  }, [camera, gl, isCoilLocked, isReady, projectGhostToSurface]);
   
   // ============================================================================
   // RENDER

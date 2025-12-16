@@ -134,11 +134,12 @@ body {
   }
 }
 
-/* Panel container */
+/* Panel container - flex container, does NOT scroll */
 .panel-container {
   width: 340px;
   height: 100%;
-  overflow: hidden;
+  min-height: 0; /* Critical for flex children to scroll */
+  overflow: hidden; /* NOT auto - child handles scrolling */
   background: transparent;
   flex-shrink: 0;
   display: flex;
@@ -222,11 +223,11 @@ body {
   line-height: 1.5;
 }
 
-/* Dev tools */
+/* Dev tools - moved to left side under Controls */
 .dev-toggle {
   position: fixed;
-  bottom: 16px;
-  right: 16px;
+  bottom: 140px;
+  left: 16px;
   padding: 8px 14px;
   background: rgba(10, 10, 15, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -247,10 +248,10 @@ body {
 
 .dev-panel {
   position: fixed;
-  bottom: 16px;
-  right: 16px;
+  bottom: 140px;
+  left: 16px;
   width: 320px;
-  max-height: 60vh;
+  max-height: 50vh;
   overflow-y: auto;
   background: rgba(10, 10, 15, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.12);

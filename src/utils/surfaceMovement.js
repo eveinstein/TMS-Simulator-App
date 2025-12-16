@@ -17,18 +17,34 @@
 
 import * as THREE from 'three';
 
-// Debug flag - set to true to enable verbose raycast logging
-const DEBUG_RAYCAST = false;
+// Debug flag - enabled in development mode only (toggle with VITE_DEBUG_RAYCAST=true)
+const DEBUG_RAYCAST = import.meta.env.DEV && import.meta.env.VITE_DEBUG_RAYCAST === 'true';
 
 // Movement configuration
 export const MOVEMENT_CONFIG = {
-  moveSpeed: 0.10,        // Meters per second (reduced ~33% for less twitchy feel)
-  rotateSpeed: 1.8,       // Radians per second for yaw
-  pitchSpeed: 0.9,        // Radians per second for pitch
+  // Spherical ghost movement (radians per second)
+  yawSpeed: 1.8,          // Speed rotating around head
+  pitchSpeed: 1.2,        // Speed moving up/down on head
+  
+  // Pitch limits (radians from horizontal plane)
+  pitchMin: 0.15,         // ~8° - don't go below equator
+  pitchMax: 1.45,         // ~83° - don't go past top
+  
+  // Coil orientation controls
+  rotateSpeed: 1.8,       // Radians per second for yaw (Q/E)
+  pitchTiltSpeed: 0.9,    // Radians per second for pitch (R/F)
+  maxTilt: Math.PI / 6,   // ±30 degrees tilt limit
+  
+  // Surface positioning
   scalpOffset: 0.006,     // Default hover distance above surface (6mm)
   snapThreshold: 0.015,   // Distance to auto-snap to target (15mm)
-  maxPitch: Math.PI / 6,  // ±30 degrees pitch limit
-  boundaryMargin: 0.008,  // 8mm margin from fiducial boundary
+  
+  // Smoothing (damping factors - higher = faster response)
+  posDamping: 18,         // Position smoothing
+  rotDamping: 14,         // Rotation smoothing
+  
+  // Boundary
+  boundaryMargin: 0.008,  // 8mm margin from fiducial boundary (legacy)
 };
 
 /**
@@ -329,6 +345,80 @@ export class ScalpSurface {
 }
 
 // ============================================================================
+// SPHERICAL GHOST SYSTEM
+// ============================================================================
+
+/**
+ * Convert spherical ghost coordinates to a world-space ray
+ * @param {number} yaw - Rotation around head Y axis (radians)
+ * @param {number} pitch - Elevation from horizontal (radians, 0 = equator, PI/2 = top)
+ * @param {THREE.Vector3} headCenter - Center of head in world space
+ * @param {number} radius - Distance from center to cast ray from
+ * @returns {{ origin: THREE.Vector3, direction: THREE.Vector3 }}
+ */
+export function ghostToRay(yaw, pitch, headCenter, radius) {
+  // Spherical to Cartesian (Y-up convention)
+  // yaw=0 points toward +Z (front of head in radiologic convention)
+  const cosPitch = Math.cos(pitch);
+  const sinPitch = Math.sin(pitch);
+  const cosYaw = Math.cos(yaw);
+  const sinYaw = Math.sin(yaw);
+  
+  // Direction vector from head center outward
+  const direction = new THREE.Vector3(
+    cosPitch * sinYaw,   // X: left/right
+    sinPitch,            // Y: up/down
+    cosPitch * cosYaw    // Z: front/back
+  ).normalize();
+  
+  // Ray origin is outside the head, pointing inward
+  const origin = headCenter.clone().addScaledVector(direction, radius);
+  
+  return {
+    origin,
+    direction: direction.clone().negate() // Point inward
+  };
+}
+
+/**
+ * Convert a world position back to ghost yaw/pitch coordinates
+ * Used for snapping to targets
+ * @param {THREE.Vector3} worldPos - World position to convert
+ * @param {THREE.Vector3} headCenter - Center of head
+ * @returns {{ yaw: number, pitch: number }}
+ */
+export function worldToGhost(worldPos, headCenter) {
+  const dir = new THREE.Vector3().subVectors(worldPos, headCenter).normalize();
+  
+  // Extract pitch (elevation)
+  const pitch = Math.asin(Math.max(-1, Math.min(1, dir.y)));
+  
+  // Extract yaw (azimuth)
+  const yaw = Math.atan2(dir.x, dir.z);
+  
+  return { yaw, pitch };
+}
+
+/**
+ * Convert keyboard state to ghost coordinate deltas
+ * Independent of camera orientation
+ */
+export function keysToGhostDelta(keys) {
+  let yawDelta = 0;
+  let pitchDelta = 0;
+  
+  // W/S or Up/Down: pitch (up/down on head)
+  if (keys.w || keys.arrowup) pitchDelta += 1;
+  if (keys.s || keys.arrowdown) pitchDelta -= 1;
+  
+  // A/D or Left/Right: yaw (around head)
+  if (keys.a || keys.arrowleft) yawDelta -= 1;
+  if (keys.d || keys.arrowright) yawDelta += 1;
+  
+  return { yawDelta, pitchDelta };
+}
+
+// ============================================================================
 // ORIENTATION HELPERS
 // ============================================================================
 
@@ -340,36 +430,93 @@ const _matrix = new THREE.Matrix4();
 const _targetDir = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 const _right = new THREE.Vector3();
+const _forward = new THREE.Vector3();
 
 /**
- * Calculate coil orientation from surface normal and user angles
- * Coil's contact face (-Z local) points into the scalp
+ * Build a stable orthonormal basis for coil orientation
+ * Avoids gimbal lock by using a reference forward direction
+ * 
+ * COIL MODEL CONVENTION (based on normalizeCoilPivot):
+ * - Coil local Y is perpendicular to contact surface (up from coil face)
+ * - Coil local -Y is the contact surface direction (faces into scalp)
+ * - Coil local Z is thickness direction
+ * - Coil local X is width direction (across figure-8)
+ * - Handle extends in -X direction
+ * 
+ * @param {THREE.Vector3} surfaceNormal - Outward normal at surface point
+ * @param {THREE.Vector3} referenceHandle - Desired handle direction (usually world -Z for posterior)
+ * @param {number} twistYaw - Additional rotation around surface normal (Q/E control)
+ * @param {number} tiltPitch - Forward/back tilt (R/F control)
+ * @returns {THREE.Quaternion}
  */
-export function calculateCoilOrientation(normal, userYaw = 0, userPitch = 0) {
-  // Coil -Z points into scalp (opposite of outward normal)
-  _targetDir.copy(normal).negate();
+export function buildStableCoilOrientation(surfaceNormal, referenceHandle, twistYaw = 0, tiltPitch = 0) {
+  // Y-AXIS: Coil local +Y should point AWAY from scalp (same as surface normal)
+  // This makes coil local -Y (contact surface) point INTO the scalp
+  const yAxis = surfaceNormal.clone().normalize();
   
-  // Create base rotation aligning -Z with target direction
-  _matrix.lookAt(new THREE.Vector3(0, 0, 0), _targetDir, _up);
+  // X-AXIS: Handle direction (coil handle extends in -X local)
+  // So if we want handle to point toward referenceHandle, coil -X should point that way
+  // Which means coil +X should point OPPOSITE to referenceHandle
+  _forward.copy(referenceHandle).negate(); // +X direction (opposite of handle)
+  const dot = _forward.dot(yAxis);
+  _forward.addScaledVector(yAxis, -dot); // Project onto tangent plane
+  
+  // Handle degenerate case (reference parallel to normal - e.g., at poles)
+  if (_forward.lengthSq() < 0.001) {
+    // Fallback: use world +Z projected onto tangent plane
+    _forward.set(0, 0, 1);
+    const dot2 = _forward.dot(yAxis);
+    _forward.addScaledVector(yAxis, -dot2);
+    
+    if (_forward.lengthSq() < 0.001) {
+      _forward.set(1, 0, 0);
+      const dot3 = _forward.dot(yAxis);
+      _forward.addScaledVector(yAxis, -dot3);
+    }
+  }
+  _forward.normalize();
+  
+  // Z-AXIS: Complete right-handed system: Z = X × Y
+  _right.crossVectors(_forward, yAxis).normalize();
+  
+  // Re-orthogonalize X = Y × Z (ensures perfect orthonormal basis)
+  _forward.crossVectors(yAxis, _right).normalize();
+  
+  // Build rotation matrix from basis vectors
+  // Matrix columns: [X, Y, Z] = [handleOpposite, awayFromScalp, right]
+  _matrix.makeBasis(_forward, yAxis, _right);
   _orientQuat.setFromRotationMatrix(_matrix);
   
-  // Apply user yaw (rotation around surface normal)
-  _yawQuat.setFromAxisAngle(normal, userYaw);
-  _orientQuat.premultiply(_yawQuat);
-  
-  // Apply user pitch (tilt forward/back)
-  _right.crossVectors(_up, normal).normalize();
-  if (_right.lengthSq() < 0.01) {
-    _right.set(1, 0, 0);
+  // Apply user twist (rotation around surface normal / coil Y axis)
+  if (Math.abs(twistYaw) > 0.001) {
+    _yawQuat.setFromAxisAngle(yAxis, twistYaw);
+    _orientQuat.premultiply(_yawQuat);
   }
-  _pitchQuat.setFromAxisAngle(_right, userPitch);
-  _orientQuat.premultiply(_pitchQuat);
+  
+  // Apply user tilt (rotation around coil Z axis)
+  if (Math.abs(tiltPitch) > 0.001) {
+    // Recompute Z vector after twist
+    _right.set(0, 0, 1).applyQuaternion(_orientQuat);
+    _pitchQuat.setFromAxisAngle(_right, tiltPitch);
+    _orientQuat.premultiply(_pitchQuat);
+  }
   
   return _orientQuat.clone();
 }
 
 /**
+ * Calculate coil orientation from surface normal and user angles
+ * LEGACY - kept for compatibility, delegates to buildStableCoilOrientation
+ */
+export function calculateCoilOrientation(normal, userYaw = 0, userPitch = 0) {
+  // Use world +Z as reference forward (front of head in radiologic convention)
+  const refForward = new THREE.Vector3(0, 0, 1);
+  return buildStableCoilOrientation(normal, refForward, userYaw, userPitch);
+}
+
+/**
  * Convert keyboard state to camera-relative movement direction
+ * LEGACY - kept for compatibility but prefer keysToGhostDelta for new code
  */
 export function keysToMoveDirection(keys, camera, surfaceNormal = null) {
   const dir = new THREE.Vector3();
@@ -411,10 +558,24 @@ export function keysToMoveDirection(keys, camera, surfaceNormal = null) {
 }
 
 /**
- * Clamp pitch to configured limits
+ * Clamp tilt pitch to configured limits (R/F control)
+ */
+export function clampTilt(pitch) {
+  return Math.max(-MOVEMENT_CONFIG.maxTilt, Math.min(MOVEMENT_CONFIG.maxTilt, pitch));
+}
+
+/**
+ * Clamp ghost pitch (elevation on head) to configured limits
+ */
+export function clampGhostPitch(pitch) {
+  return Math.max(MOVEMENT_CONFIG.pitchMin, Math.min(MOVEMENT_CONFIG.pitchMax, pitch));
+}
+
+/**
+ * Legacy alias for clampTilt
  */
 export function clampPitch(pitch) {
-  return Math.max(-MOVEMENT_CONFIG.maxPitch, Math.min(MOVEMENT_CONFIG.maxPitch, pitch));
+  return clampTilt(pitch);
 }
 
 // ============================================================================

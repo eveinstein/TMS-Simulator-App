@@ -15,6 +15,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, Html } from '@react-three/drei';
 import { HeadModel } from './HeadModel';
 import { TMSCoil } from './TMSCoil';
+import { SceneErrorBoundary } from './SceneErrorBoundary';
 import { useTMSStore } from '../../stores/tmsStore';
 import { buildCoilProxySurface } from '../../utils/coilSurfaceProxy';
 import * as THREE from 'three';
@@ -63,33 +64,59 @@ function DistanceIndicator({ position, targetName, distance }) {
   );
 }
 
-// Hotspot marker for rMT mode
-function HotspotMarker({ position, revealed }) {
+// Hotspot marker for rMT mode - circular target flush on scalp
+function HotspotMarker({ position, revealed, headCenter }) {
   if (!position || !revealed) return null;
   
+  // Compute surface normal (outward from head center)
+  const normal = useMemo(() => {
+    if (!headCenter) return new THREE.Vector3(0, 1, 0);
+    const pos = Array.isArray(position) ? new THREE.Vector3(...position) : position;
+    const center = Array.isArray(headCenter) ? new THREE.Vector3(...headCenter) : headCenter;
+    return pos.clone().sub(center).normalize();
+  }, [position, headCenter]);
+  
+  // Compute rotation quaternion to align disc with surface
+  const quaternion = useMemo(() => {
+    const up = new THREE.Vector3(0, 0, 1); // Circle geometry faces +Z by default
+    const quat = new THREE.Quaternion();
+    quat.setFromUnitVectors(up, normal);
+    return quat;
+  }, [normal]);
+  
+  const pos = Array.isArray(position) ? position : [position.x, position.y, position.z];
+  
   return (
-    <group position={position}>
-      {/* Crosshair - reduced by 1/3 */}
+    <group position={pos} quaternion={quaternion}>
+      {/* Outer ring */}
       <mesh>
-        <ringGeometry args={[0.005, 0.0067, 32]} />
-        <meshBasicMaterial color="#ff0000" side={THREE.DoubleSide} />
+        <ringGeometry args={[0.008, 0.010, 48]} />
+        <meshBasicMaterial color="#ff3333" side={THREE.DoubleSide} />
       </mesh>
       
-      {/* Inner circle - reduced by 1/3 */}
-      <mesh>
-        <circleGeometry args={[0.002, 32]} />
-        <meshBasicMaterial color="#ff0000" transparent opacity={0.5} side={THREE.DoubleSide} />
+      {/* Inner filled disc */}
+      <mesh position={[0, 0, 0.0001]}>
+        <circleGeometry args={[0.004, 48]} />
+        <meshBasicMaterial color="#ff3333" transparent opacity={0.6} side={THREE.DoubleSide} />
       </mesh>
       
-      {/* Label */}
-      <Html position={[0, 0.015, 0]} center>
+      {/* Crosshair lines */}
+      <mesh position={[0, 0, 0.0002]}>
+        <ringGeometry args={[0.005, 0.0055, 48]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.8} side={THREE.DoubleSide} />
+      </mesh>
+      
+      {/* Label - offset along normal */}
+      <Html position={[0, 0, 0.02]} center>
         <div style={{
-          background: 'rgba(255, 0, 0, 0.9)',
+          background: 'rgba(255, 50, 50, 0.95)',
           color: 'white',
-          padding: '2px 5px',
-          borderRadius: '3px',
+          padding: '3px 8px',
+          borderRadius: '4px',
           fontSize: '9px',
           fontWeight: 'bold',
+          letterSpacing: '0.5px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
         }}>
           HOTSPOT
         </div>
@@ -142,6 +169,7 @@ function SceneContent({
   const [proxyMesh, setProxyMesh] = useState(null);
   const [coilPos, setCoilPos] = useState(null);
   const [nearestTarget, setNearestTarget] = useState({ name: null, distance: null });
+  const [headCenter, setHeadCenter] = useState(null);
   const controlsRef = useRef();
   
   const { targetPositions, mode, rmt } = useTMSStore();
@@ -161,6 +189,19 @@ function SceneContent({
         offsetMm: 2,
         smoothingIters: 8,
       });
+      
+      // Capture head center for hotspot orientation
+      if (proxy.userData?.headCenter) {
+        setHeadCenter(proxy.userData.headCenter);
+      } else {
+        headMesh.geometry.computeBoundingSphere();
+        const sphere = headMesh.geometry.boundingSphere;
+        if (sphere) {
+          const center = sphere.center.clone();
+          center.applyMatrix4(headMesh.matrixWorld);
+          setHeadCenter(center);
+        }
+      }
       
       // Make proxy visible in dev mode for debugging
       if (import.meta.env.DEV) {
@@ -247,6 +288,7 @@ function SceneContent({
         <HotspotMarker 
           position={rmt.hotspotPosition}
           revealed={rmt.hotspotRevealed}
+          headCenter={headCenter}
         />
       )}
       
@@ -279,7 +321,7 @@ function SceneLegend() {
       fontSize: '10px',
       fontFamily: "'Inter', -apple-system, sans-serif",
       zIndex: 10,
-      maxWidth: '180px',
+      maxWidth: '200px',
       border: '1px solid rgba(255, 255, 255, 0.06)',
       backdropFilter: 'blur(8px)',
       lineHeight: '1.5',
@@ -292,13 +334,15 @@ function SceneLegend() {
         textTransform: 'uppercase',
         letterSpacing: '1px',
       }}>
-        Controls
+        Coil Controls
       </div>
       <div style={{ color: 'rgba(240, 240, 245, 0.48)' }}>
-        <div>WASD / Arrows — Move</div>
-        <div>Q / E — Rotate</div>
-        <div>R / F — Tilt</div>
-        <div>Space — Fire (MT)</div>
+        <div>W/S — Up / Down on head</div>
+        <div>A/D — Left / Right around</div>
+        <div>Q/E — Rotate coil</div>
+        <div>R/F — Tilt forward/back</div>
+        <div>Shift+Drag — Reposition</div>
+        <div>Space — Fire (MT mode)</div>
       </div>
     </div>
   );
@@ -353,30 +397,32 @@ export function TMSScene({ onTargetClick, selectedTarget }) {
   
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <Canvas
-        camera={{ 
-          position: [0, 0.12, 0.35], 
-          fov: 45,
-          near: 0.001,
-          far: 10,
-        }}
-        style={{ background: 'linear-gradient(180deg, #1a1a2e 0%, #16213e 100%)' }}
-        onCreated={({ gl }) => {
-          // Log WebGL context creation for debugging
-          if (import.meta.env.DEV) {
-            console.log('[TMSScene] WebGL context created');
-          }
-        }}
-      >
-        <Suspense fallback={<LoadingFallback />}>
-          <SceneContent 
-            onTargetClick={onTargetClick}
-            selectedTarget={selectedTarget}
-            cameraPreset={cameraPreset}
-            onCoilUpdate={handleCoilUpdate}
-          />
-        </Suspense>
-      </Canvas>
+      <SceneErrorBoundary>
+        <Canvas
+          camera={{ 
+            position: [0, 0.12, 0.35], 
+            fov: 45,
+            near: 0.001,
+            far: 10,
+          }}
+          style={{ background: 'linear-gradient(180deg, #1a1a2e 0%, #16213e 100%)' }}
+          onCreated={({ gl }) => {
+            // Log WebGL context creation for debugging
+            if (import.meta.env.DEV) {
+              console.log('[TMSScene] WebGL context created');
+            }
+          }}
+        >
+          <Suspense fallback={<LoadingFallback />}>
+            <SceneContent 
+              onTargetClick={onTargetClick}
+              selectedTarget={selectedTarget}
+              cameraPreset={cameraPreset}
+              onCoilUpdate={handleCoilUpdate}
+            />
+          </Suspense>
+        </Canvas>
+      </SceneErrorBoundary>
       
       {/* Camera preset buttons */}
       <div style={{

@@ -13,18 +13,8 @@ import React, { useRef, useMemo, useEffect } from 'react';
 import { useGLTF } from '@react-three/drei';
 import { useTMSStore } from '../../stores/tmsStore';
 import { normalizeModelScale, validateRadiologicConvention } from '../../utils/scaleNormalization';
+import { TARGETS, TARGET_COLORS, FIDUCIAL_COLOR } from '../../constants/targets';
 import * as THREE from 'three';
-
-// Target definitions with expected positions (for validation)
-const TARGET_INFO = {
-  F3:  { name: 'Left DLPFC (F3)', hemisphere: 'left', description: 'Left dorsolateral prefrontal cortex - Depression treatment target. Beam F3 method uses tape measure from nasion.' },
-  F4:  { name: 'Right DLPFC (F4)', hemisphere: 'right', description: 'Right dorsolateral prefrontal cortex' },
-  FP2: { name: 'Right OFC (FP2)', hemisphere: 'right', description: 'Right orbitofrontal cortex' },
-  C3:  { name: 'Left Motor (C3)', hemisphere: 'left', description: 'Left primary motor cortex - Motor threshold hotspot region' },
-  SMA: { name: 'SMA', hemisphere: 'midline', description: 'Supplementary Motor Area - Motor planning and coordination' },
-};
-
-const FIDUCIALS = ['Nasion', 'Inion', 'LPA', 'RPA'];
 
 // Map alternate names to standard fiducial names
 const FIDUCIAL_ALIASES = {
@@ -41,18 +31,6 @@ const FIDUCIAL_ALIASES = {
   'RIGHT_PREAURICULAR': 'RPA',
   'AR': 'RPA',  // AR = Auricular Right
 };
-
-// Unique color per EEG target (not by hemisphere)
-const TARGET_COLORS = {
-  F3: '#00d4ff',   // Cyan
-  F4: '#a855f7',   // Purple
-  FP2: '#f97316',  // Orange
-  C3: '#22c55e',   // Green
-  SMA: '#3b82f6',  // Blue
-};
-
-// Fiducials all silver
-const FIDUCIAL_COLOR = '#a0a0a0';
 
 // Target marker component
 function TargetMarker({ position, name, info, onClick, isSelected, isFiducial }) {
@@ -145,7 +123,7 @@ export function HeadModel({ onHeadMeshReady, onFiducialsReady, onTargetClick, se
       worldCenter.applyMatrix4(child.matrixWorld);
       
       // Extract targets
-      for (const targetName of Object.keys(TARGET_INFO)) {
+      for (const targetName of Object.keys(TARGETS)) {
         if (name.includes(targetName.toUpperCase())) {
           extractedTargets[targetName] = worldCenter.clone();
           console.log(`[HeadModel] Target ${targetName}: world=(${worldCenter.x.toFixed(4)}, ${worldCenter.y.toFixed(4)}, ${worldCenter.z.toFixed(4)})`);
@@ -231,7 +209,7 @@ export function HeadModel({ onHeadMeshReady, onFiducialsReady, onTargetClick, se
           key={name}
           position={[position.x, position.y, position.z]}
           name={name}
-          info={TARGET_INFO[name]}
+          info={TARGETS[name]}
           onClick={onTargetClick}
           isSelected={selectedTarget === name}
           isFiducial={false}

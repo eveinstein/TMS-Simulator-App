@@ -23,16 +23,8 @@ import {
   ThetaBurstScheduler,
   formatDuration 
 } from '../../engine/pulseScheduler';
+import { TARGETS } from '../../constants/targets';
 import './MachinePanel.css';
-
-// Target metadata for UI
-const TARGET_META = {
-  F3:  { label: 'L-DLPFC' },
-  F4:  { label: 'R-DLPFC' },
-  FP2: { label: 'R-OFC' },
-  C3:  { label: 'L-Motor' },
-  SMA: { label: 'SMA' },
-};
 
 export function MachinePanel() {
   // Store selectors
@@ -231,7 +223,7 @@ export function MachinePanel() {
           <div className="section-content">
             {/* Target Grid */}
             <div className="target-grid">
-              {Object.entries(TARGET_META).map(([key, meta]) => (
+              {Object.entries(TARGETS).map(([key, target]) => (
                 <button
                   key={key}
                   className={`target-btn ${selectedTargetKey === key ? 'selected' : ''}`}
@@ -240,7 +232,7 @@ export function MachinePanel() {
                   disabled={session.isRunning}
                 >
                   <span className="target-code">{key}</span>
-                  <span className="target-label">{meta.label}</span>
+                  <span className="target-label">{target.label}</span>
                 </button>
               ))}
             </div>
@@ -261,7 +253,6 @@ export function MachinePanel() {
                 <>
                   <div className="target-info">
                     <span className="target-name">{nearestTarget.name}</span>
-                    <span className="target-distance">{nearestTarget.distance?.toFixed(1)} mm</span>
                   </div>
                   <button 
                     className={`btn-lock ${isCoilLocked ? 'locked' : ''}`}

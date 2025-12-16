@@ -56,24 +56,46 @@ npm run build
 ```
 src/
 ├── components/
-│   ├── scene/          # 3D scene components
+│   ├── scene/              # 3D scene components
 │   │   ├── HeadModel.jsx
 │   │   ├── TMSCoil.jsx
-│   │   └── TMSScene.jsx
-│   └── ui/             # Control panels
+│   │   ├── TMSScene.jsx
+│   │   └── SceneErrorBoundary.jsx  # Error handling
+│   └── ui/                 # Control panels
 │       ├── MachinePanel.jsx/css
 │       └── RMTPanel.jsx/css
+├── constants/
+│   └── targets.js          # Single source of truth for targets
 ├── stores/
-│   └── tmsStore.js     # Zustand store
+│   └── tmsStore.js         # Zustand store
 ├── engine/
 │   └── pulseScheduler.js
 ├── utils/
+│   ├── coilSurfaceProxy.js
 │   ├── scaleNormalization.js
 │   └── surfaceMovement.js
 ├── App.jsx
 ├── App.css
 └── main.jsx
 ```
+
+## Debug Flags
+
+Enable debug logging via environment variables:
+
+```bash
+# Enable coil movement logging
+VITE_DEBUG_COIL=true npm run dev
+
+# Enable raycast logging
+VITE_DEBUG_RAYCAST=true npm run dev
+```
+
+## QA Verification
+
+Run the manual QA script before releases:
+- See `MANUAL_QA_SCRIPT.md` for 12 acceptance tests
+- See `QA_REPORT.md` for the last audit results
 
 ## Protocols
 

@@ -259,6 +259,14 @@ export class ScalpSurface {
    * Uses robust raycasting: from headCenter through targetPos to find surface
    */
   snapToTarget(targetPos, offset = MOVEMENT_CONFIG.scalpOffset) {
+    console.log('[ScalpSurface] snapToTarget called:', {
+      targetPos: targetPos.toArray(),
+      offset,
+      isReady: this.isReady,
+      hasMesh: !!this.surfaceMesh,
+      headCenter: this.headCenter?.toArray(),
+    });
+    
     if (!this.isReady) {
       console.warn('[ScalpSurface] Not ready for snap');
       return null;
@@ -271,9 +279,16 @@ export class ScalpSurface {
     // This ensures we find the surface point closest to target
     const direction = this._direction.subVectors(targetPos, this.headCenter).normalize();
     
+    console.log('[ScalpSurface] Raycasting:', {
+      from: this.headCenter.toArray(),
+      direction: direction.toArray(),
+    });
+    
     // Cast from head center outward
     this.raycaster.set(this.headCenter, direction);
     let intersects = this.raycaster.intersectObject(this.surfaceMesh, false);
+    
+    console.log('[ScalpSurface] Center-out raycast hits:', intersects.length);
     
     if (intersects.length === 0) {
       // Fallback: cast from far outside toward headCenter
@@ -281,6 +296,8 @@ export class ScalpSurface {
       this._tempVec.copy(direction).negate();
       this.raycaster.set(this._farPoint, this._tempVec);
       intersects = this.raycaster.intersectObject(this.surfaceMesh, false);
+      
+      console.log('[ScalpSurface] Outside-in raycast hits:', intersects.length);
       
       if (intersects.length === 0) {
         console.warn('[ScalpSurface] Snap failed - no intersection on ray through target');

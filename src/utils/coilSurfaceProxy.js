@@ -20,11 +20,48 @@ import * as THREE from 'three';
  * @param {Object} fiducials - Object with Nasion, Inion, LPA, RPA as Vector3
  * @returns {{ plane: THREE.Plane, origin: THREE.Vector3, u: THREE.Vector3, v: THREE.Vector3, n: THREE.Vector3, baseRadius: number }}
  */
-export function computeFiducialPlane(fiducials) {
-  const { Nasion, Inion, LPA, RPA } = fiducials;
+export function computeFiducialPlane(fiducials, headMesh = null) {
+  const { Nasion, Inion, LPA, RPA } = fiducials || {};
   
   if (!Nasion || !Inion || !LPA || !RPA) {
-    console.warn('[CoilProxy] Missing fiducials, using default plane');
+    console.warn('[CoilProxy] Missing fiducials, deriving from head mesh');
+    
+    // If we have a head mesh, use its bounding sphere
+    if (headMesh && headMesh.geometry) {
+      // CRITICAL: Update matrix world before computing bounds
+      headMesh.updateMatrixWorld(true);
+      
+      headMesh.geometry.computeBoundingSphere();
+      const sphere = headMesh.geometry.boundingSphere;
+      
+      if (sphere) {
+        // Get world-space center
+        const worldCenter = sphere.center.clone();
+        worldCenter.applyMatrix4(headMesh.matrixWorld);
+        
+        // Use world-space radius (account for scale)
+        const scale = new THREE.Vector3();
+        headMesh.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+        const worldRadius = sphere.radius * Math.max(scale.x, scale.y, scale.z);
+        
+        console.log('[CoilProxy] Using head mesh bounds:', {
+          center: worldCenter.toArray().map(v => v.toFixed(4)),
+          radius: worldRadius.toFixed(4),
+        });
+        
+        return {
+          plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -worldCenter.y),
+          origin: worldCenter.clone(),
+          u: new THREE.Vector3(1, 0, 0),
+          v: new THREE.Vector3(0, 0, 1),
+          n: new THREE.Vector3(0, 1, 0),
+          baseRadius: worldRadius,
+        };
+      }
+    }
+    
+    // Ultimate fallback - generic values
+    console.warn('[CoilProxy] No head mesh, using generic fallback');
     return {
       plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
       origin: new THREE.Vector3(0, 0.05, 0),
@@ -178,8 +215,8 @@ export function buildCoilProxySurface({
 }) {
   const offset = offsetMm / 1000; // Convert to meters
   
-  // Compute fiducial plane
-  const { origin, u, v, n, baseRadius } = computeFiducialPlane(fiducials);
+  // Compute fiducial plane (pass headMesh for fallback when fiducials missing)
+  const { origin, u, v, n, baseRadius } = computeFiducialPlane(fiducials, headMesh);
   
   // Increase dome radius slightly to ensure coverage
   const domeRadius = baseRadius * 1.15;

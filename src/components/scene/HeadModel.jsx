@@ -27,6 +27,22 @@ const TARGET_INFO = {
 
 const FIDUCIALS = ['Nasion', 'Inion', 'LPA', 'RPA'];
 
+// Map alternate names to standard fiducial names
+const FIDUCIAL_ALIASES = {
+  'NASION': 'Nasion',
+  'NZ': 'Nasion',
+  'INION': 'Inion', 
+  'IZ': 'Inion',
+  'LPA': 'LPA',
+  'LEFTPREAURICULAR': 'LPA',
+  'LEFT_PREAURICULAR': 'LPA',
+  'AL': 'LPA',  // AL = Auricular Left
+  'RPA': 'RPA',
+  'RIGHTPREAURICULAR': 'RPA',
+  'RIGHT_PREAURICULAR': 'RPA',
+  'AR': 'RPA',  // AR = Auricular Right
+};
+
 // Color scheme by hemisphere
 const HEMISPHERE_COLORS = {
   left: '#22c55e',    // Green
@@ -123,9 +139,9 @@ export function HeadModel({ onHeadMeshReady, onFiducialsReady, onTargetClick, se
           }
         }
         
-        // Extract fiducials
-        for (const fidName of FIDUCIALS) {
-          if (name.includes(fidName.toUpperCase())) {
+        // Extract fiducials using alias map
+        for (const [alias, fidName] of Object.entries(FIDUCIAL_ALIASES)) {
+          if (name.includes(alias) && !extractedFiducials[fidName]) {
             const worldPos = new THREE.Vector3();
             child.getWorldPosition(worldPos);
             extractedFiducials[fidName] = worldPos;
@@ -169,11 +185,11 @@ export function HeadModel({ onHeadMeshReady, onFiducialsReady, onTargetClick, se
   
   // Notify parent when fiducials are extracted
   useEffect(() => {
-    if (Object.keys(fiducials).length > 0) {
+    const foundKeys = Object.keys(fiducials);
+    if (foundKeys.length > 0) {
       onFiducialsReady?.(fiducials);
-      if (import.meta.env.DEV) {
-        console.log('[HeadModel] Fiducials extracted:', Object.keys(fiducials));
-      }
+      console.log('[HeadModel] Fiducials extracted:', foundKeys, 
+        foundKeys.length === 4 ? '✓ Complete' : `⚠ Missing ${4 - foundKeys.length}`);
     }
   }, [fiducials, onFiducialsReady]);
   

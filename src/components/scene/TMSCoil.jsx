@@ -154,10 +154,30 @@ export function TMSCoil({ proxyMesh, onCoilMove }) {
    * Snap coil to a target position
    */
   const snapToPosition = useCallback((targetVec) => {
-    if (!scalpSurfaceRef.current) return false;
+    console.log('[TMSCoil] snapToPosition called:', {
+      targetVec: targetVec.toArray(),
+      hasScalpSurface: !!scalpSurfaceRef.current,
+      effectiveOffset,
+    });
+    
+    if (!scalpSurfaceRef.current) {
+      console.error('[TMSCoil] No scalp surface!');
+      return false;
+    }
+    
+    const stateBefore = { ...coilStateRef.current };
+    console.log('[TMSCoil] State before snap:', {
+      position: stateBefore.position.toArray(),
+      normal: stateBefore.normal.toArray(),
+    });
     
     const result = scalpSurfaceRef.current.snapToTarget(targetVec, effectiveOffset);
-    if (!result) return false;
+    console.log('[TMSCoil] snapToTarget returned:', result);
+    
+    if (!result) {
+      console.error('[TMSCoil] snapToTarget failed');
+      return false;
+    }
     
     const state = coilStateRef.current;
     state.position.copy(result.position);
@@ -165,10 +185,17 @@ export function TMSCoil({ proxyMesh, onCoilMove }) {
     state.yaw = 0;
     state.pitch = 0;
     
+    console.log('[TMSCoil] State after snap:', {
+      position: state.position.toArray(),
+      normal: state.normal.toArray(),
+    });
+    
     // Clear continuity after snap
     scalpSurfaceRef.current.clearContinuity();
     
     updateTransform();
+    console.log('[TMSCoil] updateTransform called');
+    
     return true;
   }, [effectiveOffset, updateTransform]);
   
@@ -287,28 +314,57 @@ export function TMSCoil({ proxyMesh, onCoilMove }) {
         isReady && 
         scalpSurfaceRef.current) {
       
+      console.log('[TMSCoil] Snap request detected:', {
+        key: snapRequest.key,
+        nonce: snapRequest.nonce,
+        lastNonce: lastSnapNonceRef.current,
+        hasPositions: !!positions,
+        positionKeys: positions ? Object.keys(positions) : [],
+      });
+      
       lastSnapNonceRef.current = snapRequest.nonce;
       
       if (snapRequest.key && positions) {
         const targetPos = positions[snapRequest.key];
+        console.log('[TMSCoil] Target position lookup:', {
+          key: snapRequest.key,
+          found: !!targetPos,
+          pos: targetPos,
+          posType: targetPos ? targetPos.constructor?.name : 'null',
+          isVector3: targetPos instanceof THREE.Vector3,
+        });
+        
         if (targetPos) {
           snappingRef.current = true;
           
-          const targetVec = targetPos instanceof THREE.Vector3
-            ? targetPos.clone()
-            : new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z);
+          // CRITICAL: Ensure we have a proper Vector3
+          let targetVec;
+          if (targetPos instanceof THREE.Vector3) {
+            targetVec = targetPos.clone();
+          } else if (targetPos && typeof targetPos.x === 'number') {
+            targetVec = new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z);
+          } else {
+            console.error('[TMSCoil] Invalid target position format:', targetPos);
+            snappingRef.current = false;
+            return;
+          }
           
           console.log('[TMSCoil] Snap executing:', snapRequest.key, targetVec.toArray());
           
-          if (snapToPosition(targetVec)) {
+          const result = snapToPosition(targetVec);
+          console.log('[TMSCoil] snapToPosition result:', result);
+          
+          if (result) {
             console.log('[TMSCoil] Snap complete:', snapRequest.key);
             lastHoverTargetRef.current = snapRequest.key;
             store.setHoverTargetKey(snapRequest.key);
           } else {
-            console.error('[TMSCoil] Snap failed');
+            console.error('[TMSCoil] Snap failed - snapToPosition returned false/null');
           }
           
           snappingRef.current = false;
+        } else {
+          console.error('[TMSCoil] Target key not found in positions:', snapRequest.key);
         }
       }
     }

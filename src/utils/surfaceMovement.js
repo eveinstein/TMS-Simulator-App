@@ -422,96 +422,110 @@ export function keysToGhostDelta(keys) {
 // ORIENTATION HELPERS
 // ============================================================================
 
-// Reusable objects for orientation calculation
+// Reusable objects for orientation calculation (avoid allocations in hot paths)
 const _orientQuat = new THREE.Quaternion();
-const _yawQuat = new THREE.Quaternion();
-const _pitchQuat = new THREE.Quaternion();
+const _rotQuat = new THREE.Quaternion();
 const _matrix = new THREE.Matrix4();
-const _targetDir = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
-const _right = new THREE.Vector3();
-const _forward = new THREE.Vector3();
+const _xAxis = new THREE.Vector3();
+const _yAxis = new THREE.Vector3();
+const _zAxis = new THREE.Vector3();
+const _tiltAxis = new THREE.Vector3();
 
 /**
- * Build a stable orthonormal basis for coil orientation
- * Avoids gimbal lock by using a reference forward direction
+ * Calculate coil orientation to keep it flat against scalp with controllable handle direction.
  * 
- * COIL MODEL CONVENTION (based on normalizeCoilPivot):
- * - Coil local Y is perpendicular to contact surface (up from coil face)
- * - Coil local -Y is the contact surface direction (faces into scalp)
- * - Coil local Z is thickness direction
- * - Coil local X is width direction (across figure-8)
- * - Handle extends in -X direction
+ * COIL MODEL CONVENTION (GLB file):
+ * - Local -Z is the contact face (touches scalp)
+ * - Local +Z points away from scalp (up from coil face)
+ * - Handle extends along local -Y or -X
  * 
- * @param {THREE.Vector3} surfaceNormal - Outward normal at surface point
- * @param {THREE.Vector3} referenceHandle - Desired handle direction (usually world -Z for posterior)
- * @param {number} twistYaw - Additional rotation around surface normal (Q/E control)
- * @param {number} tiltPitch - Forward/back tilt (R/F control)
+ * This function aligns Local +Z with the surface normal, ensuring the contact face
+ * (-Z) touches the scalp. The handle direction is controlled via preferredHandleDir.
+ * 
+ * @param {THREE.Vector3} normal - The outward surface normal at the contact point
+ * @param {number} userYaw - User rotation offset around normal (Q/E control), in radians
+ * @param {number} tiltPitch - Forward/back tilt (R/F control), in radians
+ * @param {boolean} isSMASnapped - Whether currently snapped to SMA (needs 180° flip)
+ * @param {THREE.Vector3} [preferredHandleDir] - World direction handle should point (default: posterior -Z)
  * @returns {THREE.Quaternion}
  */
-export function buildStableCoilOrientation(surfaceNormal, referenceHandle, twistYaw = 0, tiltPitch = 0) {
-  // Y-AXIS: Coil local +Y should point AWAY from scalp (same as surface normal)
-  // This makes coil local -Y (contact surface) point INTO the scalp
-  const yAxis = surfaceNormal.clone().normalize();
+export function calculateSlidingOrientation(
+  normal, 
+  userYaw = 0, 
+  tiltPitch = 0,
+  isSMASnapped = false, 
+  preferredHandleDir = new THREE.Vector3(0, 0, -1)
+) {
+  // 1. PRIMARY AXIS: Align Model's +Z with Surface Normal
+  //    This ensures the contact face (Local -Z) touches the scalp
+  //    (Fixes the "bisecting head" / coil-on-edge issue)
+  _zAxis.copy(normal).normalize();
+
+  // 2. SECONDARY AXIS: Tangent Stabilization via Projection
+  //    Project preferredHandleDir onto tangent plane to get stable X-axis
+  //    This prevents the handle from spinning wildly as coil moves across head
   
-  // X-AXIS: Handle direction (coil handle extends in -X local)
-  // So if we want handle to point toward referenceHandle, coil -X should point that way
-  // Which means coil +X should point OPPOSITE to referenceHandle
-  _forward.copy(referenceHandle).negate(); // +X direction (opposite of handle)
-  const dot = _forward.dot(yAxis);
-  _forward.addScaledVector(yAxis, -dot); // Project onto tangent plane
-  
-  // Handle degenerate case (reference parallel to normal - e.g., at poles)
-  if (_forward.lengthSq() < 0.001) {
-    // Fallback: use world +Z projected onto tangent plane
-    _forward.set(0, 0, 1);
-    const dot2 = _forward.dot(yAxis);
-    _forward.addScaledVector(yAxis, -dot2);
-    
-    if (_forward.lengthSq() < 0.001) {
-      _forward.set(1, 0, 0);
-      const dot3 = _forward.dot(yAxis);
-      _forward.addScaledVector(yAxis, -dot3);
-    }
+  // Check for singularity (normal nearly parallel to preferred direction)
+  if (Math.abs(_zAxis.dot(preferredHandleDir)) > 0.99) {
+    // Fallback: use world up projected onto tangent plane
+    _xAxis.crossVectors(_up, _zAxis).normalize();
+  } else {
+    // Standard case: Cross (preferredHandle × normal) gives tangent vector
+    _xAxis.crossVectors(preferredHandleDir, _zAxis).normalize();
   }
-  _forward.normalize();
-  
-  // Z-AXIS: Complete right-handed system: Z = X × Y
-  _right.crossVectors(_forward, yAxis).normalize();
-  
-  // Re-orthogonalize X = Y × Z (ensures perfect orthonormal basis)
-  _forward.crossVectors(yAxis, _right).normalize();
-  
-  // Build rotation matrix from basis vectors
-  // Matrix columns: [X, Y, Z] = [handleOpposite, awayFromScalp, right]
-  _matrix.makeBasis(_forward, yAxis, _right);
+
+  // 3. TERTIARY AXIS: Complete orthonormal basis
+  //    Y = Z × X (right-handed system)
+  _yAxis.crossVectors(_zAxis, _xAxis).normalize();
+
+  // 4. CONSTRUCT ROTATION MATRIX
+  //    Matrix columns: [X, Y, Z] where Z = surface normal (coil faces scalp)
+  _matrix.makeBasis(_xAxis, _yAxis, _zAxis);
   _orientQuat.setFromRotationMatrix(_matrix);
-  
-  // Apply user twist (rotation around surface normal / coil Y axis)
-  if (Math.abs(twistYaw) > 0.001) {
-    _yawQuat.setFromAxisAngle(yAxis, twistYaw);
-    _orientQuat.premultiply(_yawQuat);
+
+  // 5. APPLY USER YAW (Q/E rotation around surface normal)
+  if (Math.abs(userYaw) > 0.001) {
+    _rotQuat.setFromAxisAngle(_zAxis, userYaw);
+    _orientQuat.premultiply(_rotQuat);
   }
-  
-  // Apply user tilt (rotation around coil Z axis)
+
+  // 6. APPLY SMA FLIP (Critical Clinical Feature)
+  //    At SMA, clinical convention is handle pointing anteriorly (opposite of default)
+  //    This flips the coil 180° around the surface normal
+  if (isSMASnapped) {
+    _rotQuat.setFromAxisAngle(_zAxis, Math.PI);
+    _orientQuat.premultiply(_rotQuat);
+  }
+
+  // 7. APPLY TILT (R/F forward/back tilt)
+  //    Rotate around the coil's local X-axis (the "hinge" for nodding)
   if (Math.abs(tiltPitch) > 0.001) {
-    // Recompute Z vector after twist
-    _right.set(0, 0, 1).applyQuaternion(_orientQuat);
-    _pitchQuat.setFromAxisAngle(_right, tiltPitch);
-    _orientQuat.premultiply(_pitchQuat);
+    // Get the current X-axis after yaw/SMA rotations
+    _tiltAxis.set(1, 0, 0).applyQuaternion(_orientQuat);
+    _rotQuat.setFromAxisAngle(_tiltAxis, tiltPitch);
+    _orientQuat.premultiply(_rotQuat);
   }
-  
+
   return _orientQuat.clone();
 }
 
 /**
+ * Legacy wrapper for backward compatibility
+ * Maps old function signature to new calculateSlidingOrientation
+ */
+export function buildStableCoilOrientation(surfaceNormal, referenceHandle, twistYaw = 0, tiltPitch = 0) {
+  // Note: This legacy function doesn't have SMA flip support
+  // New code should use calculateSlidingOrientation directly
+  return calculateSlidingOrientation(surfaceNormal, twistYaw, tiltPitch, false, referenceHandle);
+}
+
+/**
  * Calculate coil orientation from surface normal and user angles
- * LEGACY - kept for compatibility, delegates to buildStableCoilOrientation
+ * LEGACY - kept for compatibility
  */
 export function calculateCoilOrientation(normal, userYaw = 0, userPitch = 0) {
-  // Use world +Z as reference forward (front of head in radiologic convention)
-  const refForward = new THREE.Vector3(0, 0, 1);
-  return buildStableCoilOrientation(normal, refForward, userYaw, userPitch);
+  return calculateSlidingOrientation(normal, userYaw, userPitch, false);
 }
 
 /**

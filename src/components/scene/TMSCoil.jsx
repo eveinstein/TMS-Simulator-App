@@ -27,7 +27,7 @@ import {
   ghostToRay,
   worldToGhost,
   keysToGhostDelta,
-  buildStableCoilOrientation,
+  calculateSlidingOrientation,
   clampGhostPitch,
   clampTilt,
   MOVEMENT_CONFIG,
@@ -202,18 +202,21 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
     targetRef.current.position.copy(hit.point).addScaledVector(normal, effectiveOffset);
     targetRef.current.normal.copy(normal);
     
-    // Compute orientation
+    // Compute orientation using the new sliding orientation function
     const ghost = ghostRef.current;
+    const isSMA = isSMASnappedRef.current;
     
-    // Reference direction: -Z world (posterior)
-    // This makes the handle point backward by default (clinical convention)
+    // Reference direction: -Z world (posterior) - handle points backward by default
     const refPosterior = new THREE.Vector3(0, 0, -1);
     
-    // User twist from Q/E controls
-    const userTwist = ghost.twistYaw;
-    
     targetRef.current.quaternion.copy(
-      buildStableCoilOrientation(normal, refPosterior, userTwist, ghost.tiltPitch)
+      calculateSlidingOrientation(
+        normal,              // Surface normal
+        ghost.twistYaw,      // User yaw (Q/E)
+        ghost.tiltPitch,     // User tilt (R/F)
+        isSMA,               // SMA flip flag - NOW ACTUALLY USED!
+        refPosterior         // Preferred handle direction
+      )
     );
     
     return true;
@@ -484,8 +487,15 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
     // Update orientation target if controls changed
     if (moved && (keys.q || keys.e || keys.r || keys.f)) {
       const refPosterior = new THREE.Vector3(0, 0, -1);
+      const isSMA = isSMASnappedRef.current;
       targetRef.current.quaternion.copy(
-        buildStableCoilOrientation(targetRef.current.normal, refPosterior, ghost.twistYaw, ghost.tiltPitch)
+        calculateSlidingOrientation(
+          targetRef.current.normal,
+          ghost.twistYaw,
+          ghost.tiltPitch,
+          isSMA,
+          refPosterior
+        )
       );
     }
     

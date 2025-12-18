@@ -196,6 +196,15 @@ export const useTMSStore = create((set, get) => ({
     currentTrain: 0,
   },
   
+  // Pulse animation state (separate for performance - updates frequently)
+  isPulsing: false,
+  pulseIntensity: 0, // 0-1 for animation intensity
+  
+  setIsPulsing: (pulsing, intensity = 1) => set({ 
+    isPulsing: pulsing, 
+    pulseIntensity: intensity 
+  }),
+  
   startSession: () => {
     const { protocol } = get();
     if (!protocol.frequency || !protocol.pulsesPerTrain || 

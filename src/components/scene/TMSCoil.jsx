@@ -126,6 +126,8 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
   const coilPosition = useTMSStore(s => s.coilPosition);
   const coilRotation = useTMSStore(s => s.coilRotation);
   const isCoilLocked = useTMSStore(s => s.isCoilLocked);
+  const isPulsing = useTMSStore(s => s.isPulsing);
+  const pulseIntensity = useTMSStore(s => s.pulseIntensity);
   const setCoilPosition = useTMSStore(s => s.setCoilPosition);
   const setCoilRotation = useTMSStore(s => s.setCoilRotation);
   const mode = useTMSStore(s => s.mode);
@@ -600,6 +602,11 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
   // ============================================================================
   // RENDER
   // ============================================================================
+  
+  // Calculate pulse animation properties
+  const pulseScale = isPulsing ? 1.15 : 1;
+  const pulseOpacity = isPulsing ? 0.8 * (pulseIntensity || 1) : 0;
+  
   return (
     <group ref={groupRef}>
       <primitive
@@ -607,6 +614,56 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
         position={coilPosition}
         quaternion={new THREE.Quaternion(...coilRotation)}
       />
+      
+      {/* Pulse animation effect - electromagnetic field visualization */}
+      <group 
+        position={coilPosition}
+        quaternion={new THREE.Quaternion(...coilRotation)}
+      >
+        {/* Primary pulse ring */}
+        <mesh 
+          scale={[pulseScale, pulseScale, pulseScale]}
+          position={[0, 0.002, 0]}
+          rotation={[Math.PI / 2, 0, 0]}
+        >
+          <ringGeometry args={[0.025, 0.035, 64]} />
+          <meshBasicMaterial 
+            color="#00c8f0" 
+            transparent 
+            opacity={pulseOpacity}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+        
+        {/* Secondary expanding ring */}
+        <mesh 
+          scale={[isPulsing ? 1.4 : 1, isPulsing ? 1.4 : 1, isPulsing ? 1.4 : 1]}
+          position={[0, 0.003, 0]}
+          rotation={[Math.PI / 2, 0, 0]}
+        >
+          <ringGeometry args={[0.035, 0.042, 64]} />
+          <meshBasicMaterial 
+            color="#00c8f0" 
+            transparent 
+            opacity={pulseOpacity * 0.5}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+        
+        {/* Core glow */}
+        <mesh 
+          position={[0, 0.001, 0]}
+          rotation={[Math.PI / 2, 0, 0]}
+        >
+          <circleGeometry args={[0.022, 64]} />
+          <meshBasicMaterial 
+            color="#00ffff" 
+            transparent 
+            opacity={pulseOpacity * 0.6}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      </group>
       
       {/* Lock indicator */}
       {isCoilLocked && (

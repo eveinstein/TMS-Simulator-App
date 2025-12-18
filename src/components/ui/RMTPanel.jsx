@@ -2,11 +2,7 @@
  * RMTPanel.jsx
  * ============
  * Motor Threshold Training interface.
- * Premium UI matching MachinePanel design system.
- * 
- * Workflow:
- * 1. Find Hand Hotspot - Locate motor hotspot near C3
- * 2. Titration - Determine threshold
+ * Professional UI with clean design, no emoji clutter.
  */
 
 import React, { useState, useCallback } from 'react';
@@ -63,7 +59,6 @@ export function RMTPanel() {
     setClaimedMT('');
   }, [resetRMT]);
   
-  // Task 14: Reset coil to C3 without locking
   const handleResetToC3 = useCallback(() => {
     requestSnap('C3');
   }, [requestSnap]);
@@ -71,16 +66,28 @@ export function RMTPanel() {
   // Render Idle State
   const renderIdleState = () => (
     <div className="idle-content">
-      <div className="idle-icon">🎯</div>
+      <div className="idle-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="48" height="48">
+          <circle cx="12" cy="12" r="10" />
+          <circle cx="12" cy="12" r="3" />
+          <line x1="12" y1="2" x2="12" y2="5" />
+          <line x1="12" y1="19" x2="12" y2="22" />
+          <line x1="2" y1="12" x2="5" y2="12" />
+          <line x1="19" y1="12" x2="22" y2="12" />
+        </svg>
+      </div>
       <h3 className="idle-title">Motor Threshold Training</h3>
       <p className="idle-description">
         Practice locating the motor hotspot and determining resting motor threshold through guided simulation.
       </p>
       <button className="btn-action primary" onClick={handleStartTrial}>
-        ▶ Start New Trial
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+          <polygon points="5 3 19 12 5 21 5 3" />
+        </svg>
+        Start New Trial
       </button>
       {rmt.trialNumber > 0 && (
-        <p style={{ marginTop: '12px', fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+        <p className="trial-count">
           Completed trials: {rmt.trialNumber}
         </p>
       )}
@@ -91,7 +98,7 @@ export function RMTPanel() {
   const renderHuntPhase = () => (
     <div className="phase-content">
       <div className="phase-header">
-        <span className="phase-badge hunt">Find Hand Hotspot</span>
+        <span className="phase-badge hunt">Find Hotspot</span>
         <span className="trial-number">Trial #{rmt.trialNumber}</span>
       </div>
       
@@ -106,7 +113,10 @@ export function RMTPanel() {
       {/* Intensity Control */}
       <div className="rmt-section">
         <div className="rmt-section-header">
-          <span>⚡</span> Intensity
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+          </svg>
+          <span>Intensity</span>
         </div>
         <div className="rmt-section-content">
           <div className="intensity-control">
@@ -153,7 +163,16 @@ export function RMTPanel() {
       {rmt.lastPulseResult && (
         <div className={`pulse-result ${rmt.lastPulseResult.twitch ? 'twitch' : 'no-twitch'}`}>
           <div className="result-icon">
-            {rmt.lastPulseResult.twitch ? '✓' : '✗'}
+            {rmt.lastPulseResult.twitch ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="20" height="20">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="20" height="20">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            )}
           </div>
           <div className="result-text">
             {rmt.lastPulseResult.twitch ? 'Movement Detected' : 'No Movement'}
@@ -169,20 +188,34 @@ export function RMTPanel() {
       {/* Actions */}
       <div className="action-buttons">
         <button className="btn-action primary" onClick={handleFirePulse}>
-          ⚡ Fire Pulse
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+          </svg>
+          Fire Pulse
         </button>
         <button className="btn-action secondary" onClick={handleResetToC3}>
-          ↺ Reset to C3
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+          </svg>
+          Reset to C3
         </button>
         <button className="btn-action secondary" onClick={advanceToTitration}>
-          → Advance to Titration
+          Advance to Titration
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <path d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
         </button>
         <button 
           className="btn-action secondary" 
           onClick={() => revealHotspot()}
           disabled={rmt.hotspotRevealed}
         >
-          {rmt.hotspotRevealed ? '✓ Hotspot Revealed' : '👁 Reveal Hotspot'}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          {rmt.hotspotRevealed ? 'Hotspot Revealed' : 'Reveal Hotspot'}
         </button>
       </div>
       
@@ -198,7 +231,7 @@ export function RMTPanel() {
   const renderTitrationPhase = () => (
     <div className="phase-content">
       <div className="phase-header">
-        <span className="phase-badge titration">Titration Phase</span>
+        <span className="phase-badge titration">Titration</span>
         <span className="trial-number">Trial #{rmt.trialNumber}</span>
       </div>
       
@@ -213,7 +246,10 @@ export function RMTPanel() {
       {/* Intensity Control */}
       <div className="rmt-section">
         <div className="rmt-section-header">
-          <span>⚡</span> Intensity
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+          </svg>
+          <span>Intensity</span>
         </div>
         <div className="rmt-section-content">
           <div className="intensity-control">
@@ -221,10 +257,14 @@ export function RMTPanel() {
               <span className="intensity-value">{rmt.intensity}</span>
               <span className="intensity-unit">% MSO</span>
             </div>
-            <div className="intensity-buttons">
+            <div className="intensity-buttons titration-buttons">
               <button className="btn-intensity" onClick={() => adjustRMTIntensity(-2)}>−2</button>
               <button className="btn-intensity" onClick={() => adjustRMTIntensity(-1)}>−1</button>
-              <button className="btn-intensity primary" onClick={handleFirePulse}>⚡</button>
+              <button className="btn-intensity primary" onClick={handleFirePulse}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                </svg>
+              </button>
               <button className="btn-intensity" onClick={() => adjustRMTIntensity(1)}>+1</button>
               <button className="btn-intensity" onClick={() => adjustRMTIntensity(2)}>+2</button>
             </div>
@@ -235,18 +275,19 @@ export function RMTPanel() {
       {/* Titration Results */}
       <div className="rmt-section">
         <div className="rmt-section-header">
-          <span>📊</span> Response Log
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
+          <span>Response Log</span>
         </div>
         <div className="rmt-section-content">
-          <div style={{ textAlign: 'center', marginBottom: '12px' }}>
-            <span style={{ fontSize: '24px', fontWeight: 'bold', fontFamily: 'var(--font-mono)' }}>
-              <span style={{ color: 'var(--accent-green)' }}>{rmt.titrationHits}</span>
-              <span style={{ color: 'var(--text-muted)' }}> / </span>
-              <span style={{ color: 'var(--text-primary)' }}>{rmt.titrationCount}</span>
-            </span>
-            <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
-              responses
-            </span>
+          <div className="titration-score">
+            <span className="score-hits">{rmt.titrationHits}</span>
+            <span className="score-divider">/</span>
+            <span className="score-total">{rmt.titrationCount}</span>
+            <span className="score-label">responses</span>
           </div>
           
           {/* Visual Log */}
@@ -268,9 +309,19 @@ export function RMTPanel() {
       
       {/* Last Pulse Result */}
       {rmt.lastPulseResult && (
-        <div className={`pulse-result ${rmt.lastPulseResult.twitch ? 'twitch' : 'no-twitch'}`}>
+        <div className={`pulse-result compact ${rmt.lastPulseResult.twitch ? 'twitch' : 'no-twitch'}`}>
           <div className="result-text">
-            {rmt.lastPulseResult.twitch ? '✓ Movement' : '✗ No Movement'}
+            {rmt.lastPulseResult.twitch ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            )}
+            {rmt.lastPulseResult.twitch ? 'Movement' : 'No Movement'}
             {rmt.lastPulseResult.twitch && ` (${rmt.lastPulseResult.category})`}
           </div>
         </div>
@@ -286,10 +337,14 @@ export function RMTPanel() {
       {/* Complete Section */}
       <div className="rmt-section">
         <div className="rmt-section-header">
-          <span>🎯</span> Submit Answer
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          <span>Submit Answer</span>
         </div>
         <div className="rmt-section-content">
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div className="submit-row">
             <input
               type="number"
               min="0"
@@ -297,24 +352,17 @@ export function RMTPanel() {
               value={claimedMT}
               onChange={(e) => setClaimedMT(e.target.value)}
               placeholder="Your MT %"
-              style={{
-                flex: 1,
-                padding: '10px 12px',
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-md)',
-                color: 'var(--text-primary)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '14px',
-              }}
+              className="mt-input"
             />
             <button 
               className="btn-action success"
               onClick={handleComplete}
               disabled={!claimedMT}
-              style={{ whiteSpace: 'nowrap' }}
             >
-              Complete ✓
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Complete
             </button>
           </div>
         </div>
@@ -367,15 +415,7 @@ export function RMTPanel() {
         </div>
         
         {/* Grade Scale */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
-          gap: '8px', 
-          flexWrap: 'wrap',
-          marginTop: '12px',
-          fontSize: '10px',
-          color: 'var(--text-muted)',
-        }}>
+        <div className="grade-scale">
           <span>A: &lt;{GRADE_THRESHOLDS.A}%</span>
           <span>B: &lt;{GRADE_THRESHOLDS.B}%</span>
           <span>C: &lt;{GRADE_THRESHOLDS.C}%</span>
@@ -384,12 +424,19 @@ export function RMTPanel() {
         </div>
         
         {/* Actions */}
-        <div className="action-buttons" style={{ marginTop: '16px' }}>
+        <div className="action-buttons">
           <button className="btn-action primary" onClick={handleStartTrial}>
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
             Start New Trial
           </button>
           <button className="btn-action secondary" onClick={handleReset}>
-            Reset
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
+            Reset All
           </button>
         </div>
       </div>
@@ -412,8 +459,13 @@ export function RMTPanel() {
       {/* Header */}
       <div className="panel-header">
         <div className="panel-title">
-          <span className="panel-icon">🎯</span>
-          rMT Training
+          <svg className="panel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="3" />
+            <line x1="12" y1="2" x2="12" y2="5" />
+            <line x1="12" y1="19" x2="12" y2="22" />
+          </svg>
+          <span>rMT Training</span>
         </div>
         <span className={`phase-badge ${rmt.phase}`}>
           {rmt.phase === 'idle' ? 'READY' : 

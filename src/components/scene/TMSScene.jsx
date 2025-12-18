@@ -307,42 +307,121 @@ function SceneContent({
   );
 }
 
-// Controls legend overlay
+// Controls legend overlay - Polished minimal design
 function SceneLegend() {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  
   return (
     <div style={{
       position: 'absolute',
       bottom: '16px',
       left: '16px',
-      background: 'rgba(8, 8, 12, 0.92)',
-      color: 'rgba(240, 240, 245, 0.72)',
-      padding: '10px 14px',
-      borderRadius: '6px',
+      background: 'rgba(12, 12, 16, 0.95)',
+      color: 'rgba(240, 240, 245, 0.6)',
+      borderRadius: '8px',
       fontSize: '10px',
       fontFamily: "'Inter', -apple-system, sans-serif",
       zIndex: 10,
-      maxWidth: '200px',
-      border: '1px solid rgba(255, 255, 255, 0.06)',
-      backdropFilter: 'blur(8px)',
-      lineHeight: '1.5',
+      border: '1px solid rgba(255, 255, 255, 0.08)',
+      backdropFilter: 'blur(12px)',
+      overflow: 'hidden',
+      transition: 'all 0.2s ease-out',
+      minWidth: isCollapsed ? '40px' : '160px',
     }}>
-      <div style={{ 
-        fontWeight: '600', 
-        marginBottom: '6px', 
-        color: 'rgba(0, 200, 240, 0.9)',
-        fontSize: '9px',
-        textTransform: 'uppercase',
-        letterSpacing: '1px',
-      }}>
-        Coil Controls
+      {/* Header */}
+      <div 
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        style={{ 
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8px 10px',
+          cursor: 'pointer',
+          borderBottom: isCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.06)',
+          background: 'rgba(255, 255, 255, 0.02)',
+        }}
+      >
+        <span style={{
+          fontWeight: '600',
+          color: 'rgba(0, 200, 240, 0.85)',
+          fontSize: '9px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          display: isCollapsed ? 'none' : 'block',
+        }}>
+          Controls
+        </span>
+        <svg 
+          viewBox="0 0 24 24" 
+          fill="none" 
+          stroke="currentColor" 
+          strokeWidth="2"
+          style={{
+            width: '12px',
+            height: '12px',
+            color: 'rgba(255, 255, 255, 0.4)',
+            transform: isCollapsed ? 'rotate(180deg)' : 'none',
+            transition: 'transform 0.2s ease',
+          }}
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
       </div>
-      <div style={{ color: 'rgba(240, 240, 245, 0.48)' }}>
-        <div>W/S — Up / Down on head</div>
-        <div>A/D — Left / Right around</div>
-        <div>Q/E — Rotate coil</div>
-        <div>R/F — Tilt forward/back</div>
-        <div>Shift+Drag — Reposition</div>
-        <div>Space — Fire (MT mode)</div>
+      
+      {/* Content */}
+      {!isCollapsed && (
+        <div style={{ padding: '8px 10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <ControlRow label="Move" keys={['W', 'A', 'S', 'D']} />
+            <ControlRow label="Rotate" keys={['Q', 'E']} />
+            <ControlRow label="Tilt" keys={['R', 'F']} />
+            <ControlRow label="Drag" keys={['⇧', 'Drag']} />
+            <ControlRow label="Fire" keys={['Space']} accent />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Control row helper component
+function ControlRow({ label, keys, accent }) {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '8px',
+    }}>
+      <span style={{ 
+        color: accent ? 'rgba(0, 200, 240, 0.7)' : 'rgba(255, 255, 255, 0.4)',
+        fontSize: '9px',
+      }}>
+        {label}
+      </span>
+      <div style={{ display: 'flex', gap: '2px' }}>
+        {keys.map((key, i) => (
+          <span 
+            key={i}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: key.length > 1 ? 'auto' : '18px',
+              height: '18px',
+              padding: '0 4px',
+              background: accent ? 'rgba(0, 200, 240, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+              border: `1px solid ${accent ? 'rgba(0, 200, 240, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+              borderRadius: '3px',
+              fontSize: '9px',
+              fontFamily: "'SF Mono', 'JetBrains Mono', monospace",
+              fontWeight: '500',
+              color: accent ? 'rgba(0, 200, 240, 0.9)' : 'rgba(255, 255, 255, 0.6)',
+            }}
+          >
+            {key}
+          </span>
+        ))}
       </div>
     </div>
   );

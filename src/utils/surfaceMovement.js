@@ -491,6 +491,12 @@ export function calculateSlidingOrientation(
   //     This flips the handle to point posterior (model's local handle axis is opposite)
   _rotQuat.setFromAxisAngle(_zAxis, Math.PI);
   _orientQuat.premultiply(_rotQuat);
+  
+  // DEBUG: Log once on first call to confirm this code path executes
+  if (!calculateSlidingOrientation._logged) {
+    console.log('[calculateSlidingOrientation] 180° BASE ROTATION APPLIED');
+    calculateSlidingOrientation._logged = true;
+  }
 
   // 5. APPLY USER YAW (Q/E rotation around surface normal)
   if (Math.abs(userYaw) > 0.001) {

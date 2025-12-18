@@ -708,6 +708,31 @@
   gap: var(--space-sm);
 }
 
+/* Submit current intensity button */
+.btn-action.submit-current {
+  margin-top: var(--space-sm);
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: #a78bfa;
+}
+
+.btn-action.submit-current:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.25);
+  border-color: rgba(139, 92, 246, 0.5);
+  color: #c4b5fd;
+}
+
+.btn-action.submit-current:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Reset to C3 button - standalone style */
+.reset-c3-btn {
+  width: 100%;
+  justify-content: center;
+}
+
 .mt-input {
   flex: 1;
   padding: 10px 12px;

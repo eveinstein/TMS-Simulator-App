@@ -64,7 +64,7 @@ function DistanceIndicator({ position, targetName, distance }) {
   );
 }
 
-// Hotspot marker for rMT mode - circular target flush on scalp
+// Hotspot marker for rMT mode - improved visibility with glow effect
 function HotspotMarker({ position, revealed, headCenter }) {
   if (!position || !revealed) return null;
   
@@ -77,46 +77,75 @@ function HotspotMarker({ position, revealed, headCenter }) {
   }, [position, headCenter]);
   
   // Compute rotation quaternion to align disc with surface
+  // Use the surface normal to orient the marker flat against the scalp
   const quaternion = useMemo(() => {
-    const up = new THREE.Vector3(0, 0, 1); // Circle geometry faces +Z by default
+    const up = new THREE.Vector3(0, 1, 0); // Disc faces +Y by default
     const quat = new THREE.Quaternion();
     quat.setFromUnitVectors(up, normal);
     return quat;
   }, [normal]);
   
-  const pos = Array.isArray(position) ? position : [position.x, position.y, position.z];
+  // Position slightly offset from scalp surface to prevent z-fighting
+  const offsetPosition = useMemo(() => {
+    const pos = Array.isArray(position) ? new THREE.Vector3(...position) : position.clone();
+    // Offset slightly along normal to sit just above scalp
+    return pos.clone().addScaledVector(normal, 0.002);
+  }, [position, normal]);
+  
+  const pos = [offsetPosition.x, offsetPosition.y, offsetPosition.z];
+  
+  // Smaller sizes for better appearance between coil and head
+  const HOTSPOT_SIZE = {
+    outerRing: { inner: 0.005, outer: 0.007 },
+    middleRing: { inner: 0.003, outer: 0.004 },
+    innerDisc: 0.0025,
+    glowRing: { inner: 0.007, outer: 0.012 },
+  };
   
   return (
     <group position={pos} quaternion={quaternion}>
-      {/* Outer ring */}
-      <mesh>
-        <ringGeometry args={[0.008, 0.010, 48]} />
-        <meshBasicMaterial color="#ff3333" side={THREE.DoubleSide} />
+      {/* Outer glow ring for visibility */}
+      <mesh position={[0, 0.0001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[HOTSPOT_SIZE.glowRing.inner, HOTSPOT_SIZE.glowRing.outer, 48]} />
+        <meshBasicMaterial 
+          color="#ff3333" 
+          transparent 
+          opacity={0.25} 
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
       </mesh>
       
-      {/* Inner filled disc */}
-      <mesh position={[0, 0, 0.0001]}>
-        <circleGeometry args={[0.004, 48]} />
-        <meshBasicMaterial color="#ff3333" transparent opacity={0.6} side={THREE.DoubleSide} />
+      {/* Main outer ring */}
+      <mesh position={[0, 0.0002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[HOTSPOT_SIZE.outerRing.inner, HOTSPOT_SIZE.outerRing.outer, 48]} />
+        <meshBasicMaterial color="#ff4444" side={THREE.DoubleSide} />
       </mesh>
       
-      {/* Crosshair lines */}
-      <mesh position={[0, 0, 0.0002]}>
-        <ringGeometry args={[0.005, 0.0055, 48]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={0.8} side={THREE.DoubleSide} />
+      {/* Middle ring - white for contrast */}
+      <mesh position={[0, 0.0003, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[HOTSPOT_SIZE.middleRing.inner, HOTSPOT_SIZE.middleRing.outer, 48]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.9} side={THREE.DoubleSide} />
       </mesh>
       
-      {/* Label - offset along normal */}
-      <Html position={[0, 0, 0.02]} center>
+      {/* Inner filled disc - bright center */}
+      <mesh position={[0, 0.0004, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[HOTSPOT_SIZE.innerDisc, 32]} />
+        <meshBasicMaterial color="#ff6666" side={THREE.DoubleSide} />
+      </mesh>
+      
+      {/* Label - positioned above the marker along surface normal */}
+      <Html position={[0, 0.018, 0]} center>
         <div style={{
           background: 'rgba(255, 50, 50, 0.95)',
           color: 'white',
-          padding: '3px 8px',
-          borderRadius: '4px',
-          fontSize: '9px',
+          padding: '2px 6px',
+          borderRadius: '3px',
+          fontSize: '8px',
           fontWeight: 'bold',
           letterSpacing: '0.5px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+          whiteSpace: 'nowrap',
         }}>
           HOTSPOT
         </div>

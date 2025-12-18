@@ -44,6 +44,7 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
   const [showProtocol, setShowProtocol] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [pulseFlash, setPulseFlash] = useState(false);
+  const [itiProgress, setItiProgress] = useState({ inITI: false, progress: 0, remaining: 0 });
   const schedulerRef = useRef(null);
   const frameRef = useRef(null);
   
@@ -88,6 +89,7 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
         frameRef.current = null;
       }
       setIsPulsing(false); // Reset 3D coil animation
+      setItiProgress({ inITI: false, progress: 0, remaining: 0 });
       return;
     }
     
@@ -108,6 +110,20 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
       if (schedulerRef.current && session.isRunning && !session.isPaused) {
         const pulses = schedulerRef.current.update(delta);
         
+        // Track ITI progress
+        const scheduler = schedulerRef.current;
+        if (scheduler.isInITI && scheduler.isInITI()) {
+          const iti = protocol.iti || 0;
+          const elapsed = scheduler.itiAccumulator || 0;
+          const progress = iti > 0 ? Math.min(1, elapsed / iti) : 0;
+          const remaining = Math.max(0, iti - elapsed);
+          setItiProgress({ inITI: true, progress, remaining });
+        } else {
+          if (itiProgress.inITI) {
+            setItiProgress({ inITI: false, progress: 0, remaining: 0 });
+          }
+        }
+        
         // Trigger visual pulse feedback - both UI and 3D coil
         if (pulses > 0) {
           setPulseFlash(true);
@@ -125,6 +141,7 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
         if (session.pulsesDelivered >= protocol.totalPulses) {
           stopSession();
           setIsPulsing(false);
+          setItiProgress({ inITI: false, progress: 0, remaining: 0 });
           return;
         }
       }
@@ -140,7 +157,7 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
         frameRef.current = null;
       }
     };
-  }, [session.isRunning, session.isPaused, protocol, incrementPulse, stopSession, session.pulsesDelivered, setIsPulsing]);
+  }, [session.isRunning, session.isPaused, protocol, incrementPulse, stopSession, session.pulsesDelivered, setIsPulsing, itiProgress.inITI]);
   
   // Handlers
   const handleStart = useCallback(() => {
@@ -502,6 +519,22 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
                 <span className="progress-time">{formatDuration(session.elapsedTime)}</span>
               </div>
             </div>
+            
+            {/* Inter-train Interval Progress - only visible during ITI */}
+            {itiProgress.inITI && (
+              <div className="iti-progress-wrapper">
+                <div className="iti-header">
+                  <span className="iti-label">Inter-train interval</span>
+                  <span className="iti-remaining">{itiProgress.remaining.toFixed(1)}s</span>
+                </div>
+                <div className="iti-progress-bar">
+                  <div 
+                    className="iti-progress-fill"
+                    style={{ width: `${itiProgress.progress * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
             
             {/* Control Buttons */}
             <div className="session-controls">

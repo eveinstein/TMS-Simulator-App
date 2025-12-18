@@ -603,9 +603,18 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
   // RENDER
   // ============================================================================
   
-  // Calculate pulse animation properties
-  const pulseScale = isPulsing ? 1.15 : 1;
-  const pulseOpacity = isPulsing ? 0.8 * (pulseIntensity || 1) : 0;
+  // Pulse animation parameters (tunable)
+  const PULSE_CONFIG = {
+    coneRadius: 0.018,      // Base radius of the focused cone
+    coneDepth: 0.025,       // How far the pulse extends "into" the head
+    coreRadius: 0.012,      // Inner bright core
+    glowRadius: 0.022,      // Outer subtle glow
+    duration: 60,           // Animation duration in ms (handled by caller)
+  };
+  
+  // Calculate directional pulse animation properties
+  const pulseProgress = isPulsing ? 1 : 0;
+  const baseOpacity = (pulseIntensity || 1) * 0.85;
   
   return (
     <group ref={groupRef}>
@@ -615,52 +624,80 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
         quaternion={new THREE.Quaternion(...coilRotation)}
       />
       
-      {/* Pulse animation effect - electromagnetic field visualization */}
+      {/* Directional pulse effect - focused electromagnetic field entering scalp */}
       <group 
         position={coilPosition}
         quaternion={new THREE.Quaternion(...coilRotation)}
       >
-        {/* Primary pulse ring */}
+        {/* Primary focused cone - points INTO the head (negative Y in coil-local space) */}
         <mesh 
-          scale={[pulseScale, pulseScale, pulseScale]}
-          position={[0, 0.002, 0]}
-          rotation={[Math.PI / 2, 0, 0]}
+          position={[0, -PULSE_CONFIG.coneDepth * 0.5 * pulseProgress, 0]}
+          rotation={[Math.PI, 0, 0]}
+          scale={isPulsing ? [1, 1, 1] : [0.8, 0.5, 0.8]}
         >
-          <ringGeometry args={[0.025, 0.035, 64]} />
+          <coneGeometry args={[
+            PULSE_CONFIG.coneRadius * (0.8 + 0.2 * pulseProgress), 
+            PULSE_CONFIG.coneDepth * pulseProgress, 
+            32, 
+            1, 
+            true
+          ]} />
           <meshBasicMaterial 
-            color="#00c8f0" 
+            color="#00d4ff" 
             transparent 
-            opacity={pulseOpacity}
+            opacity={isPulsing ? baseOpacity * 0.7 : 0}
             side={THREE.DoubleSide}
+            depthWrite={false}
           />
         </mesh>
         
-        {/* Secondary expanding ring */}
+        {/* Inner bright core - sits at coil surface */}
         <mesh 
-          scale={[isPulsing ? 1.4 : 1, isPulsing ? 1.4 : 1, isPulsing ? 1.4 : 1]}
-          position={[0, 0.003, 0]}
+          position={[0, -0.001, 0]}
           rotation={[Math.PI / 2, 0, 0]}
         >
-          <ringGeometry args={[0.035, 0.042, 64]} />
+          <circleGeometry args={[PULSE_CONFIG.coreRadius * (isPulsing ? 1 : 0.7), 32]} />
           <meshBasicMaterial 
-            color="#00c8f0" 
+            color="#80ffff" 
             transparent 
-            opacity={pulseOpacity * 0.5}
+            opacity={isPulsing ? baseOpacity * 0.9 : 0}
             side={THREE.DoubleSide}
+            depthWrite={false}
           />
         </mesh>
         
-        {/* Core glow */}
+        {/* Surface contact ring - subtle ring at coil-scalp interface */}
         <mesh 
-          position={[0, 0.001, 0]}
+          position={[0, -0.002, 0]}
           rotation={[Math.PI / 2, 0, 0]}
+          scale={isPulsing ? [1.1, 1.1, 1] : [1, 1, 1]}
         >
-          <circleGeometry args={[0.022, 64]} />
+          <ringGeometry args={[
+            PULSE_CONFIG.coreRadius * 0.9, 
+            PULSE_CONFIG.glowRadius * (isPulsing ? 1 : 0.8), 
+            48
+          ]} />
           <meshBasicMaterial 
-            color="#00ffff" 
+            color="#00c8f0" 
             transparent 
-            opacity={pulseOpacity * 0.6}
+            opacity={isPulsing ? baseOpacity * 0.5 : 0}
             side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+        
+        {/* Focused lobe gradient - ellipsoid that hugs the scalp */}
+        <mesh 
+          position={[0, -PULSE_CONFIG.coneDepth * 0.3, 0]}
+          scale={isPulsing ? [1.2, 0.6, 1.2] : [0.9, 0.3, 0.9]}
+        >
+          <sphereGeometry args={[PULSE_CONFIG.coneRadius * 0.8, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshBasicMaterial 
+            color="#00a8d0" 
+            transparent 
+            opacity={isPulsing ? baseOpacity * 0.35 : 0}
+            side={THREE.DoubleSide}
+            depthWrite={false}
           />
         </mesh>
       </group>

@@ -472,11 +472,10 @@ export function calculateSlidingOrientation(
   // Check for singularity (normal nearly parallel to preferred direction)
   if (Math.abs(_zAxis.dot(preferredHandleDir)) > 0.99) {
     // Fallback: use world up projected onto tangent plane
-    _xAxis.crossVectors(_zAxis, _up).normalize();
+    _xAxis.crossVectors(_up, _zAxis).normalize();
   } else {
-    // Standard case: Cross (normal × preferredHandle) gives tangent vector
-    // This orientation ensures handle points in preferredHandleDir (posterior)
-    _xAxis.crossVectors(_zAxis, preferredHandleDir).normalize();
+    // Standard case: Cross (preferredHandle × normal) gives tangent vector
+    _xAxis.crossVectors(preferredHandleDir, _zAxis).normalize();
   }
 
   // 3. TERTIARY AXIS: Complete orthonormal basis
@@ -487,6 +486,11 @@ export function calculateSlidingOrientation(
   //    Matrix columns: [X, Y, Z] where Z = surface normal (coil faces scalp)
   _matrix.makeBasis(_xAxis, _yAxis, _zAxis);
   _orientQuat.setFromRotationMatrix(_matrix);
+
+  // 4.5 APPLY 180° BASE ROTATION around normal
+  //     This flips the handle to point posterior (model's local handle axis is opposite)
+  _rotQuat.setFromAxisAngle(_zAxis, Math.PI);
+  _orientQuat.premultiply(_rotQuat);
 
   // 5. APPLY USER YAW (Q/E rotation around surface normal)
   if (Math.abs(userYaw) > 0.001) {

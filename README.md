@@ -1,171 +1,111 @@
-# Vascular CPT Coding Assistant
+# TMS Simulator
 
-A lightweight, high-utility web application for vascular surgeons to search CPT codes, calculate wRVUs, and generate operative reports.
+A production-quality 3D TMS (Transcranial Magnetic Stimulation) training simulator built with React and Three.js.
 
-## ✅ All Phases Complete
+## Features
 
-### Phase 1 - Core Shell
-- Next.js 14 + TypeScript + Tailwind CSS
-- 152 CPT codes from master database
-- Zustand store with year toggle
-- Fuse.js fuzzy search with 37799 fallback
-- Cart with wRVU totals and smart suggestions
+### TMS Simulator Mode
+- **3D Head Model** with EEG targets (F3, F4, FP2, C3, SMA) and fiducials
+- **Interactive TMS Coil** with scalp-constrained physics
+- **WASD Controls** for surface movement, Q/E for rotation
+- **Mouse Drag** to snap coil to scalp positions
+- **Protocol Configuration**: frequency, intensity, pulses, inter-train interval
+- **Session Timing**: accurate pulse scheduling with progress tracking
+- **Target Locking**: lock coil to targets within 20mm
+- **Radiologic Convention**: validated left/right orientation
 
-### Phase 2 - Intelligence Layer
-- Popup engine with 7 trigger types
-- Sidebar with 5 tabbed educational panels
-- Contextual banners for coding alerts
-- Code-specific tips and suggestions
+### Motor Threshold (rMT) Training Mode
+- **Hunt Phase**: Find the motor hotspot with hidden target
+- **Titration Phase**: Determine threshold with single/10-pulse trials
+- **Grading System**: A-F grades based on accuracy
+- **Realistic Physics**: Distance-dependent response probability
 
-### Phase 3 - Op-Note Generator
-- 26+ template types for all vascular categories
-- Patient context form (laterality, access, anesthesia)
-- Live preview with placeholder counter
-- Copy to clipboard and download functionality
+## Controls
 
-### Phase 4 - Polish ✨ (NEW)
-**Keyboard Shortcuts**
-| Shortcut | Action |
-|----------|--------|
-| `/` or `Ctrl+K` | Focus search |
-| `?` | Show keyboard shortcuts |
-| `Esc` | Close modal / Clear search |
-| `Ctrl+G` | Generate Op-Note |
-| `Ctrl+R` | Open Quick Reference |
-| `Ctrl+Shift+C` | Clear all selected codes |
-| `1` | Switch to 2025 |
-| `2` | Switch to 2026 |
-| `↑↓` | Navigate search results |
-| `Enter` | Select result |
+| Key | Action |
+|-----|--------|
+| W/S | Move coil forward/backward on scalp |
+| A/D | Move coil left/right on scalp |
+| ↑/↓ | Move coil up/down on scalp |
+| Q/E | Rotate coil clockwise/counter-clockwise |
+| Space | Fire pulse (rMT mode) |
+| Mouse Drag | Snap coil to scalp position |
 
-**Accessibility**
-- Skip to main content link
-- ARIA labels and roles throughout
-- Screen reader optimized
-- Focus management
-- Keyboard navigable dropdowns
-
-**Mobile Responsiveness**
-- Responsive typography and spacing
-- Touch-friendly targets (44px minimum)
-- Mobile-optimized search dropdown
-- Safe area insets for notched devices
-- Responsive quick reference panel
-
-**UI Polish**
-- Loading spinner during search
-- "No results" empty state
-- Smooth animations and transitions
-- Gradient accents on headers
-- Tooltips with keyboard hints
-- Card entry animations
-- Custom selection styling
-
-**Performance**
-- Debounced search (150ms)
-- Memoized popup/banner evaluation
-- ForwardRef for focus management
-- Optimized re-renders with Zustand selectors
-
-## Getting Started
+## Installation
 
 ```bash
-# Install dependencies
 npm install
-
-# Run development server
 npm run dev
+```
 
-# Build for production
+## Build
+
+```bash
 npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the app.
+## Technology Stack
+
+- React 18
+- Three.js / React Three Fiber
+- Zustand (state management)
+- Vite (build tool)
 
 ## Project Structure
 
 ```
-/src
-  /app
-    page.tsx              # Main page with all integrations
-    layout.tsx            # Root layout
-    globals.css           # Global styles + animations
-  /components
-    Header.tsx            # App header with year toggle
-    KeyboardShortcutsModal.tsx
-    /search
-      SearchBar.tsx       # Search with forwardRef
-      SearchResultRow.tsx # Result with ARIA
-    /cart
-      SelectedCodes.tsx   # Cart with animations
-      CodeCard.tsx        # Selected code card
-    /sidebar
-      Sidebar.tsx         # Sheet drawer with tabs
-      SidebarCard.tsx     # Expandable content
-      ContextualBanner.tsx
-    /popups
-      PopupToast.tsx
-    /opnote
-      OpNoteModal.tsx
-    /ui
-      button, badge, input, card
-      sheet, tabs, scroll-area
-      dialog, select, label
-      tooltip, skeleton
-  /hooks
-    useKeyboardShortcuts.ts
-  /lib
-    database.ts
-    store.ts
-    fuseSearch.ts
-    popupEngine.ts
-    opNoteTemplates.ts
-    utils.ts
-  /content
-    sidebarContent.ts
-  /data
-    master_vascular_db.json
-    popup_trigger_config.json
-  /types
-    index.ts
+src/
+├── components/
+│   ├── scene/              # 3D scene components
+│   │   ├── HeadModel.jsx
+│   │   ├── TMSCoil.jsx
+│   │   ├── TMSScene.jsx
+│   │   └── SceneErrorBoundary.jsx  # Error handling
+│   └── ui/                 # Control panels
+│       ├── MachinePanel.jsx/css
+│       └── RMTPanel.jsx/css
+├── constants/
+│   └── targets.js          # Single source of truth for targets
+├── stores/
+│   └── tmsStore.js         # Zustand store
+├── engine/
+│   └── pulseScheduler.js
+├── utils/
+│   ├── coilSurfaceProxy.js
+│   ├── scaleNormalization.js
+│   └── surfaceMovement.js
+├── App.jsx
+├── App.css
+└── main.jsx
 ```
 
-## Features Summary
+## Debug Flags
 
-| Feature | Description |
-|---------|-------------|
-| **Search** | Fuzzy search across 152 codes with keyboard nav |
-| **Year Toggle** | Switch between 2025/2026 wRVU values |
-| **Cart** | Add/remove codes, see totals with animations |
-| **Popups** | Context-aware coding alerts and reminders |
-| **Sidebar** | 5-tab educational reference (modifiers, add-ons, etc.) |
-| **Op-Note** | Generate draft operative reports from codes |
-| **Shortcuts** | Full keyboard navigation throughout |
-| **Mobile** | Responsive design for all screen sizes |
+Enable debug logging via environment variables:
 
-## Database Stats
+```bash
+# Enable coil movement logging
+VITE_DEBUG_COIL=true npm run dev
 
-- **Total Codes:** 152
-- **Active:** 90
-- **New 2026:** 46
-- **Deleted 2026:** 16
-- **Categories:** 12
-- **Template Types:** 26+
+# Enable raycast logging
+VITE_DEBUG_RAYCAST=true npm run dev
+```
 
-## Browser Support
+## QA Verification
 
-- Chrome 90+
-- Firefox 88+
-- Safari 14+
-- Edge 90+
+Run the manual QA script before releases:
+- See `MANUAL_QA_SCRIPT.md` for 12 acceptance tests
+- See `QA_REPORT.md` for the last audit results
 
-## Compliance Note
+## Protocols
 
-Educational reference only. Bill only when supported by medical necessity, documentation, and payer policy.
+Example protocols included:
+- Depression 10Hz (standard)
+- Depression 1Hz (inhibitory)
+- iTBS (intermittent theta burst)
+- cTBS (continuous theta burst)
+- OCD SMA
 
-All generated op-notes are DRAFTS ONLY and must be edited to reflect the actual case.
+## License
 
----
-
-**Vascular CPT Coding Assistant v1.0**  
-Built with Next.js 14, TypeScript, Tailwind CSS, Zustand, Fuse.js, and Radix UI
+MIT

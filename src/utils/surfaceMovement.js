@@ -472,10 +472,11 @@ export function calculateSlidingOrientation(
   // Check for singularity (normal nearly parallel to preferred direction)
   if (Math.abs(_zAxis.dot(preferredHandleDir)) > 0.99) {
     // Fallback: use world up projected onto tangent plane
-    _xAxis.crossVectors(_up, _zAxis).normalize();
+    _xAxis.crossVectors(_zAxis, _up).normalize();
   } else {
-    // Standard case: Cross (preferredHandle × normal) gives tangent vector
-    _xAxis.crossVectors(preferredHandleDir, _zAxis).normalize();
+    // Standard case: Cross (normal × preferredHandle) gives tangent vector
+    // This orientation ensures handle points in preferredHandleDir (posterior)
+    _xAxis.crossVectors(_zAxis, preferredHandleDir).normalize();
   }
 
   // 3. TERTIARY AXIS: Complete orthonormal basis

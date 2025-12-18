@@ -226,6 +226,7 @@ function TargetProximityIndicator({ target, distance }) {
 function App() {
   const { mode, setMode, selectedTargetKey, requestSnap, hoverTargetKey } = useTMSStore();
   const [showPopup, setShowPopup] = useState(null);
+  const [isPanelExpanded, setIsPanelExpanded] = useState(false);
   const prevModeRef = useRef(mode);
   
   // Fiducial names that should NOT trigger snapping
@@ -301,9 +302,12 @@ function App() {
         </div>
         
         {/* Control Panel */}
-        <div className="panel-container">
+        <div className={`panel-container ${isPanelExpanded ? 'expanded' : ''}`}>
           {mode === 'simulator' ? (
-            <MachinePanel />
+            <MachinePanel 
+              isExpanded={isPanelExpanded}
+              onToggleExpand={() => setIsPanelExpanded(v => !v)}
+            />
           ) : (
             <RMTPanel />
           )}

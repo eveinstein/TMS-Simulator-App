@@ -118,9 +118,6 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
   const PROXIMITY_ENTER = 0.015;
   const PROXIMITY_EXIT = 0.020;
   
-  // Track if currently snapped to SMA (needs 180° handle flip per clinical convention)
-  const isSMASnappedRef = useRef(false);
-  
   // Three.js context
   const { camera, gl } = useThree();
   const gltf = useGLTF(`${import.meta.env.BASE_URL}models/coil.glb`);
@@ -202,11 +199,11 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
     targetRef.current.position.copy(hit.point).addScaledVector(normal, effectiveOffset);
     targetRef.current.normal.copy(normal);
     
-    // Compute orientation using the new sliding orientation function
+    // Compute orientation - handle points posterior, naturally rotates upward on forehead
     const ghost = ghostRef.current;
-    const isSMA = isSMASnappedRef.current;
     
-    // Reference direction: -Z world (posterior) - handle points backward by default
+    // Reference direction: -Z world (posterior) - handle always tries to point backward
+    // On forehead (FP2), this projects to "upward" as the tangent plane becomes vertical
     const refPosterior = new THREE.Vector3(0, 0, -1);
     
     targetRef.current.quaternion.copy(
@@ -214,7 +211,6 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
         normal,              // Surface normal
         ghost.twistYaw,      // User yaw (Q/E)
         ghost.tiltPitch,     // User tilt (R/F)
-        isSMA,               // SMA flip flag - NOW ACTUALLY USED!
         refPosterior         // Preferred handle direction
       )
     );
@@ -417,9 +413,6 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
             return;
           }
           
-          // Track SMA for handle flip
-          isSMASnappedRef.current = (snapRequest.key === 'SMA');
-          
           const result = snapToPosition(targetVec);
           
           if (result) {
@@ -446,9 +439,6 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
     const { yawDelta, pitchDelta } = keysToGhostDelta(keys);
     
     if (yawDelta !== 0 || pitchDelta !== 0) {
-      // Clear SMA flip when user moves
-      isSMASnappedRef.current = false;
-      
       // Compute candidate ghost position
       const candYaw = ghost.yaw + yawDelta * MOVEMENT_CONFIG.yawSpeed * dt;
       const candPitch = clampGhostPitch(ghost.pitch + pitchDelta * MOVEMENT_CONFIG.pitchSpeed * dt);
@@ -487,13 +477,11 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
     // Update orientation target if controls changed
     if (moved && (keys.q || keys.e || keys.r || keys.f)) {
       const refPosterior = new THREE.Vector3(0, 0, -1);
-      const isSMA = isSMASnappedRef.current;
       targetRef.current.quaternion.copy(
         calculateSlidingOrientation(
           targetRef.current.normal,
           ghost.twistYaw,
           ghost.tiltPitch,
-          isSMA,
           refPosterior
         )
       );
@@ -594,9 +582,6 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
         ghostRef.current.pitch = clampGhostPitch(pitch);
         
         projectGhostToSurface(ghostRef.current.yaw, ghostRef.current.pitch);
-        
-        // Clear SMA flip when dragging
-        isSMASnappedRef.current = false;
       }
     };
     

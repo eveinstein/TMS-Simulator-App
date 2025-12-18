@@ -26,7 +26,7 @@ import {
 import { TARGETS } from '../../constants/targets';
 import './MachinePanel.css';
 
-export function MachinePanel() {
+export function MachinePanel({ isExpanded = false, onToggleExpand }) {
   // Store selectors
   const protocol = useTMSStore(s => s.protocol);
   const setProtocolField = useTMSStore(s => s.setProtocolField);
@@ -200,10 +200,20 @@ export function MachinePanel() {
           <span className="panel-icon">⚡</span>
           TMS Control
         </div>
-        <div className="panel-status">
-          <span className={`status-badge ${session.isRunning ? 'running' : 'idle'}`}>
-            {session.isRunning ? (session.isPaused ? 'PAUSED' : 'ACTIVE') : 'READY'}
-          </span>
+        <div className="panel-header-actions">
+          <button 
+            className="btn-expand"
+            onClick={onToggleExpand}
+            title={isExpanded ? 'Collapse panel' : 'Expand panel'}
+            aria-label={isExpanded ? 'Collapse panel' : 'Expand panel'}
+          >
+            {isExpanded ? '◂▸' : '◂  ▸'}
+          </button>
+          <div className="panel-status">
+            <span className={`status-badge ${session.isRunning ? 'running' : 'idle'}`}>
+              {session.isRunning ? (session.isPaused ? 'PAUSED' : 'ACTIVE') : 'READY'}
+            </span>
+          </div>
         </div>
       </div>
       

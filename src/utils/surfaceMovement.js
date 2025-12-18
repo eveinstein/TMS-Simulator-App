@@ -443,10 +443,14 @@ const _tiltAxis = new THREE.Vector3();
  * This function aligns Local +Z with the surface normal, ensuring the contact face
  * (-Z) touches the scalp. The handle direction is controlled via preferredHandleDir.
  * 
+ * HANDLE BEHAVIOR:
+ * - On top/sides of head: handle points posterior (backward)
+ * - On forehead (FP2): handle points upward (as "backward" projects onto vertical tangent plane)
+ * - The handle naturally rotates as the coil slides across the curved surface
+ * 
  * @param {THREE.Vector3} normal - The outward surface normal at the contact point
  * @param {number} userYaw - User rotation offset around normal (Q/E control), in radians
  * @param {number} tiltPitch - Forward/back tilt (R/F control), in radians
- * @param {boolean} isSMASnapped - Whether currently snapped to SMA (needs 180° flip)
  * @param {THREE.Vector3} [preferredHandleDir] - World direction handle should point (default: posterior -Z)
  * @returns {THREE.Quaternion}
  */
@@ -454,17 +458,16 @@ export function calculateSlidingOrientation(
   normal, 
   userYaw = 0, 
   tiltPitch = 0,
-  isSMASnapped = false, 
   preferredHandleDir = new THREE.Vector3(0, 0, -1)
 ) {
   // 1. PRIMARY AXIS: Align Model's +Z with Surface Normal
   //    This ensures the contact face (Local -Z) touches the scalp
-  //    (Fixes the "bisecting head" / coil-on-edge issue)
   _zAxis.copy(normal).normalize();
 
   // 2. SECONDARY AXIS: Tangent Stabilization via Projection
   //    Project preferredHandleDir onto tangent plane to get stable X-axis
   //    This prevents the handle from spinning wildly as coil moves across head
+  //    On forehead, "posterior" projects to "upward" naturally
   
   // Check for singularity (normal nearly parallel to preferred direction)
   if (Math.abs(_zAxis.dot(preferredHandleDir)) > 0.99) {
@@ -490,18 +493,10 @@ export function calculateSlidingOrientation(
     _orientQuat.premultiply(_rotQuat);
   }
 
-  // 6. APPLY SMA FLIP (Critical Clinical Feature)
-  //    At SMA, clinical convention is handle pointing anteriorly (opposite of default)
-  //    This flips the coil 180° around the surface normal
-  if (isSMASnapped) {
-    _rotQuat.setFromAxisAngle(_zAxis, Math.PI);
-    _orientQuat.premultiply(_rotQuat);
-  }
-
-  // 7. APPLY TILT (R/F forward/back tilt)
+  // 6. APPLY TILT (R/F forward/back tilt)
   //    Rotate around the coil's local X-axis (the "hinge" for nodding)
   if (Math.abs(tiltPitch) > 0.001) {
-    // Get the current X-axis after yaw/SMA rotations
+    // Get the current X-axis after yaw rotation
     _tiltAxis.set(1, 0, 0).applyQuaternion(_orientQuat);
     _rotQuat.setFromAxisAngle(_tiltAxis, tiltPitch);
     _orientQuat.premultiply(_rotQuat);
@@ -515,9 +510,7 @@ export function calculateSlidingOrientation(
  * Maps old function signature to new calculateSlidingOrientation
  */
 export function buildStableCoilOrientation(surfaceNormal, referenceHandle, twistYaw = 0, tiltPitch = 0) {
-  // Note: This legacy function doesn't have SMA flip support
-  // New code should use calculateSlidingOrientation directly
-  return calculateSlidingOrientation(surfaceNormal, twistYaw, tiltPitch, false, referenceHandle);
+  return calculateSlidingOrientation(surfaceNormal, twistYaw, tiltPitch, referenceHandle);
 }
 
 /**
@@ -525,7 +518,7 @@ export function buildStableCoilOrientation(surfaceNormal, referenceHandle, twist
  * LEGACY - kept for compatibility
  */
 export function calculateCoilOrientation(normal, userYaw = 0, userPitch = 0) {
-  return calculateSlidingOrientation(normal, userYaw, userPitch, false);
+  return calculateSlidingOrientation(normal, userYaw, userPitch);
 }
 
 /**

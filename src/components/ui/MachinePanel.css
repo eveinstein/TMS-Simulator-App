@@ -107,17 +107,22 @@
    ============================================================================ */
 
 .machine-panel {
+  /* CRITICAL: Fill parent and enable flex column layout */
   width: 100%;
   height: 100%;
-  min-height: 0; /* Critical for flex child scrolling */
+  min-height: 0; /* Allow shrinking - CRITICAL for nested flex scrolling */
+  
+  /* Flex column - header fixed, body scrolls */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  
+  /* Styling */
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-subtle);
   font-family: var(--font-family);
   font-size: var(--text-base);
   color: var(--text-primary);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
   
   /* Subtle depth - like device bezel */
   box-shadow: 
@@ -126,18 +131,24 @@
 }
 
 /* ============================================================================
-   PANEL HEADER - Device Identity Bar
+   PANEL HEADER - Device Identity Bar (Sticky, Never Scrolls)
    ============================================================================ */
 
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-lg) var(--space-xl);
-  background: var(--bg-tertiary);
+  padding: var(--space-md) var(--space-lg);
+  background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-tertiary) 100%);
   border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-  min-height: 56px;
+  
+  /* CRITICAL: Don't shrink or grow - stay fixed height */
+  flex: 0 0 auto;
+  min-height: 52px;
+  
+  /* Ensure it's above scroll content if position: sticky is used */
+  position: relative;
+  z-index: 5;
 }
 
 .panel-title {
@@ -153,6 +164,42 @@
 .panel-icon {
   font-size: var(--text-xl);
   opacity: 0.9;
+}
+
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+/* Expand/Collapse Toggle Button */
+.btn-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: var(--font-bold);
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-expand:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.btn-expand:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
 }
 
 .panel-status {
@@ -199,19 +246,29 @@
 }
 
 /* ============================================================================
-   PANEL BODY - Scrollable Content Area
+   PANEL BODY - THE SINGLE SCROLL CONTAINER
    ============================================================================ */
 
 .panel-body {
-  flex: 1;
-  min-height: 0; /* Critical for flex child scrolling */
+  /* CRITICAL: This is the ONE AND ONLY scroll container */
+  flex: 1 1 auto;
+  min-height: 0; /* MUST have this for flex child scrolling to work */
+  
+  /* Scrolling - vertical only */
   overflow-y: auto;
   overflow-x: hidden;
+  
+  /* Prevent scroll chaining to parent/body */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  
+  /* Layout for sections */
   padding: var(--space-lg);
   display: flex;
   flex-direction: column;
-  gap: var(--space-lg);
-  overscroll-behavior: contain;
+  gap: var(--space-md);
+  
+  /* Background */
   background: var(--bg-primary);
   
   /* Refined scrollbar */
@@ -220,7 +277,7 @@
 }
 
 .panel-body::-webkit-scrollbar {
-  width: 5px;
+  width: 6px;
 }
 
 .panel-body::-webkit-scrollbar-track {
@@ -246,21 +303,27 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  
+  /* Prevent section from causing horizontal overflow */
+  min-width: 0;
+  max-width: 100%;
 }
 
 .panel-section.highlight {
-  border-color: rgba(0, 200, 240, 0.3);
+  border-color: rgba(0, 200, 240, 0.35);
   background: linear-gradient(180deg, 
-    rgba(0, 200, 240, 0.03) 0%, 
+    rgba(0, 200, 240, 0.05) 0%, 
     var(--bg-secondary) 100%);
+  box-shadow: 0 0 20px rgba(0, 200, 240, 0.05);
 }
 
 .section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-md) var(--space-lg);
-  background: var(--bg-tertiary);
+  padding: var(--space-sm) var(--space-lg);
+  min-height: 40px;
+  background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
   border-bottom: 1px solid var(--border-subtle);
   cursor: pointer;
   user-select: none;
@@ -268,7 +331,7 @@
 }
 
 .section-header:hover {
-  background: var(--bg-elevated);
+  background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-tertiary) 100%);
 }
 
 .section-title {
@@ -276,19 +339,19 @@
   align-items: center;
   gap: var(--space-sm);
   font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
+  font-weight: var(--font-bold);
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 1.2px;
 }
 
 .section-title-icon {
   font-size: var(--text-sm);
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .section-chevron {
-  font-size: var(--text-xs);
+  font-size: 9px;
   color: var(--text-muted);
   transition: transform var(--transition-base);
 }
@@ -298,7 +361,7 @@
 }
 
 .section-content {
-  padding: var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
   overflow: visible;
 }
 
@@ -315,7 +378,7 @@
 }
 
 .target-section .section-header {
-  background: var(--bg-elevated);
+  background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-tertiary) 100%);
 }
 
 .target-section .section-title {
@@ -325,9 +388,13 @@
 .target-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-sm);
-  margin-bottom: var(--space-lg);
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
   width: 100%;
+  
+  /* Prevent horizontal overflow */
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Grid layout for 5 targets: 3 on top, 2 centered below */
@@ -339,24 +406,28 @@
   grid-column: 2;
 }
 
-/* Base target button */
+/* Base target button - more compact */
 .target-btn {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--space-md) var(--space-sm);
-  min-height: 48px;
+  padding: var(--space-sm) var(--space-xs);
+  min-height: 42px;
   background: var(--bg-inset);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   color: var(--text-secondary);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-weight: var(--font-medium);
   cursor: pointer;
   transition: all var(--transition-base);
-  overflow: visible;
+  overflow: hidden;
+  
+  /* Prevent text overflow */
+  min-width: 0;
+  max-width: 100%;
 }
 
 .target-btn:hover:not(:disabled) {
@@ -424,33 +495,36 @@
 }
 
 .target-btn .target-code {
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   font-weight: var(--font-bold);
   line-height: 1.2;
   transition: color var(--transition-fast);
 }
 
 .target-btn .target-label {
-  font-size: var(--text-2xs);
+  font-size: 8px;
   font-weight: var(--font-medium);
   color: var(--text-muted);
   white-space: nowrap;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
-/* Reset Button */
+/* Reset Button - Compact */
 .btn-reset-coil {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-sm);
-  padding: var(--space-md) var(--space-lg);
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
   background: var(--bg-secondary);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   color: var(--text-secondary);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-weight: var(--font-medium);
   cursor: pointer;
   transition: all var(--transition-base);
@@ -468,82 +542,82 @@
 }
 
 /* ============================================================================
-   COIL CONTROLS INFO
+   COIL CONTROLS INFO - Compact Keyboard Reference
    ============================================================================ */
 
 .controls-info {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-xs) var(--space-md);
 }
 
 .control-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-xs) 0;
+  padding: var(--space-2xs) 0;
 }
 
 .control-label {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
 .control-keys {
   display: flex;
-  gap: var(--space-xs);
+  gap: 2px;
 }
 
 .key-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 24px;
-  height: 22px;
-  padding: 0 var(--space-xs);
+  min-width: 20px;
+  height: 18px;
+  padding: 0 var(--space-2xs);
   background: var(--bg-secondary);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
+  border-radius: var(--radius-xs);
+  font-size: 9px;
   font-family: var(--font-mono);
   color: var(--text-secondary);
 }
 
 /* ============================================================================
-   POSITION DISPLAY
+   POSITION DISPLAY - Compact
    ============================================================================ */
 
 .position-display {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
   background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  margin-top: var(--space-md);
+  margin-top: var(--space-sm);
 }
 
 .target-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .target-name {
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   font-weight: var(--font-semibold);
   color: var(--accent-cyan);
 }
 
 .target-distance {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-family: var(--font-mono);
   color: var(--text-tertiary);
 }
 
 .no-target {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--text-muted);
   font-style: italic;
 }
@@ -551,13 +625,13 @@
 .btn-lock {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
-  padding: var(--space-sm) var(--space-md);
+  gap: var(--space-2xs);
+  padding: var(--space-xs) var(--space-sm);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-weight: var(--font-medium);
   cursor: pointer;
   transition: all var(--transition-base);
@@ -581,19 +655,19 @@
 }
 
 /* ============================================================================
-   PROTOCOL PARAMETERS - Precision Inputs
+   PROTOCOL PARAMETERS - Precision Inputs (Compact)
    ============================================================================ */
 
 .param-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-md);
+  gap: var(--space-sm);
 }
 
 .param-item {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
+  gap: 2px;
 }
 
 .param-item.full-width {
@@ -601,8 +675,8 @@
 }
 
 .param-item label {
-  font-size: var(--text-2xs);
-  font-weight: var(--font-semibold);
+  font-size: 8px;
+  font-weight: var(--font-bold);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -611,12 +685,12 @@
 .param-item input,
 .param-item select {
   width: 100%;
-  padding: var(--space-sm) var(--space-md);
+  padding: var(--space-xs) var(--space-sm);
   background: var(--bg-inset);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-family: var(--font-mono);
   transition: all var(--transition-fast);
 }
@@ -649,26 +723,26 @@
 }
 
 /* ============================================================================
-   TIMING SUMMARY - Computed Values Display
+   TIMING SUMMARY - Computed Values Display (Compact)
    ============================================================================ */
 
 .timing-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-sm);
-  padding-top: var(--space-md);
-  margin-top: var(--space-md);
+  gap: var(--space-xs);
+  padding-top: var(--space-sm);
+  margin-top: var(--space-sm);
   border-top: 1px solid var(--border-subtle);
 }
 
 .timing-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: var(--space-xs) var(--space-sm);
+  gap: 3px;
+  padding: 2px var(--space-xs);
   background: var(--bg-tertiary);
   border-radius: var(--radius-xs);
-  font-size: var(--text-2xs);
+  font-size: 9px;
   color: var(--text-tertiary);
 }
 
@@ -679,19 +753,19 @@
 }
 
 /* ============================================================================
-   SESSION PROGRESS - Live Metrics Display
+   SESSION PROGRESS - Live Metrics Display (Compact)
    ============================================================================ */
 
 .progress-container {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-sm);
 }
 
 .progress-bar {
   position: relative;
   width: 100%;
-  height: 6px;
+  height: 5px;
   background: var(--bg-inset);
   border-radius: var(--radius-full);
   overflow: hidden;
@@ -702,7 +776,7 @@
   left: 0;
   top: 0;
   height: 100%;
-  background: var(--accent-cyan);
+  background: linear-gradient(90deg, var(--accent-cyan-dim) 0%, var(--accent-cyan) 100%);
   border-radius: var(--radius-full);
   transition: width var(--transition-slow);
 }
@@ -714,7 +788,7 @@
 }
 
 .pulse-count {
-  font-size: var(--text-lg);
+  font-size: var(--text-base);
   font-weight: var(--font-bold);
   font-family: var(--font-mono);
   color: var(--text-primary);
@@ -727,7 +801,7 @@
 }
 
 .time-elapsed {
-  font-size: var(--text-xs);
+  font-size: 9px;
   font-family: var(--font-mono);
   color: var(--text-muted);
   letter-spacing: 0.5px;
@@ -740,7 +814,7 @@
 .control-buttons {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr;
-  gap: var(--space-sm);
+  gap: var(--space-xs);
 }
 
 .btn-primary,
@@ -750,24 +824,31 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-sm);
-  padding: var(--space-md) var(--space-lg);
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-md);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   cursor: pointer;
   transition: all var(--transition-fast);
   border: 1px solid transparent;
+  white-space: nowrap;
 }
 
 .btn-primary {
-  background: var(--accent-cyan);
+  background: linear-gradient(180deg, var(--accent-cyan) 0%, var(--accent-cyan-dim) 100%);
   color: var(--bg-primary);
+  font-weight: var(--font-bold);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 200, 240, 0.25);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-cyan-dim);
-  box-shadow: var(--shadow-glow-cyan);
+  background: linear-gradient(180deg, #00dcff 0%, var(--accent-cyan) 100%);
+  box-shadow: 
+    0 4px 16px rgba(0, 200, 240, 0.35),
+    0 0 20px rgba(0, 200, 240, 0.2);
+  transform: translateY(-1px);
 }
 
 .btn-primary:active:not(:disabled) {
@@ -826,19 +907,19 @@
 }
 
 /* ============================================================================
-   ADVANCED SECTION
+   ADVANCED SECTION - Compact
    ============================================================================ */
 
 .advanced-toggle {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   width: 100%;
-  padding: var(--space-md) var(--space-lg);
+  padding: var(--space-sm) var(--space-md);
   background: transparent;
   border: none;
   color: var(--text-tertiary);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-weight: var(--font-medium);
   cursor: pointer;
   transition: all var(--transition-base);
@@ -850,31 +931,31 @@
 }
 
 .advanced-content {
-  padding: 0 var(--space-lg) var(--space-lg);
+  padding: 0 var(--space-md) var(--space-md);
 }
 
 .section-subtitle {
-  font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
+  font-size: 9px;
+  font-weight: var(--font-bold);
   color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 1px;
-  margin-bottom: var(--space-md);
+  margin-bottom: var(--space-sm);
 }
 
 .example-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-sm);
+  gap: var(--space-xs);
 }
 
 .btn-example {
-  padding: var(--space-sm) var(--space-md);
+  padding: var(--space-xs) var(--space-sm);
   background: var(--bg-secondary);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  font-size: var(--text-xs);
+  font-size: 9px;
   font-weight: var(--font-medium);
   cursor: pointer;
   transition: all var(--transition-base);

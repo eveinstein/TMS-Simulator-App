@@ -107,18 +107,32 @@ body {
   width: 150px;
 }
 
-/* Main content */
+/* ============================================================================
+   MAIN CONTENT LAYOUT - Bulletproof Flex with Single Scroll Owner
+   ============================================================================ */
+
+/* CSS Custom Properties for panel sizing */
+:root {
+  --panel-width-collapsed: 340px;
+  --panel-width-expanded: 520px;
+  --header-height: 52px;
+}
+
 .app-main {
   display: flex;
-  flex: 1;
+  flex-direction: row;
+  /* CRITICAL: Explicit height calculation for proper flex child sizing */
+  height: calc(100vh - var(--header-height));
+  min-height: 0; /* Allow flex children to shrink below content size */
   overflow: hidden;
 }
 
-/* Scene container */
+/* Scene container - takes remaining space */
 .scene-container {
-  flex: 1;
+  flex: 1 1 auto;
   position: relative;
-  min-width: 0;
+  min-width: 0;  /* Allow shrinking below content size */
+  min-height: 0; /* Allow shrinking below content size */
   background: radial-gradient(ellipse at center, #12121a 0%, #0a0a0f 100%);
 }
 
@@ -134,16 +148,30 @@ body {
   }
 }
 
-/* Panel container - flex container, does NOT scroll */
+/* Panel container - DOES NOT SCROLL. Child handles scrolling. */
 .panel-container {
-  width: 340px;
+  /* Default collapsed width */
+  width: var(--panel-width-collapsed);
+  flex: 0 0 var(--panel-width-collapsed);
+  
+  /* CRITICAL: These enable child scrolling */
+  min-height: 0;
   height: 100%;
-  min-height: 0; /* Critical for flex children to scroll */
-  overflow: hidden; /* NOT auto - child handles scrolling */
-  background: transparent;
-  flex-shrink: 0;
+  overflow: hidden; /* NOT auto - MachinePanel.panel-body scrolls */
+  
+  /* Layout */
   display: flex;
   flex-direction: column;
+  background: transparent;
+  
+  /* Smooth width transition for expand/collapse */
+  transition: width 0.25s ease-out, flex-basis 0.25s ease-out;
+}
+
+/* Expanded panel state */
+.panel-container.expanded {
+  width: var(--panel-width-expanded);
+  flex: 0 0 var(--panel-width-expanded);
 }
 
 /* Target popup */
@@ -328,6 +356,12 @@ body {
 @media (max-width: 1200px) {
   .panel-container {
     width: 320px;
+    flex: 0 0 320px;
+  }
+  
+  .panel-container.expanded {
+    width: 440px;
+    flex: 0 0 440px;
   }
 }
 
@@ -337,12 +371,15 @@ body {
   }
   
   .scene-container {
-    height: 50%;
+    flex: 1 1 50%;
+    min-height: 300px;
   }
   
-  .panel-container {
+  .panel-container,
+  .panel-container.expanded {
     width: 100%;
-    height: 50%;
+    flex: 1 1 50%;
+    min-height: 0;
   }
   
   .app-nav {

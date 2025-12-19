@@ -1,128 +1,68 @@
-# TMS Simulator - UI & MT Training Bug Audit Report
+# TMS Simulator - Complete UI Overhaul
 
-## Status: ✅ ALL FIXES IMPLEMENTED
+## Status: ✅ COMPLETE REWRITE
 
-All critical fixes have been applied, tested, and verified.
-
----
-
-## Executive Summary
-
-After thorough code review, I identified **two critical issues** and implemented fixes:
-
-1. **Sidebar Scroll Issue** - ✅ FIXED - Complete layout overhaul using position:absolute
-2. **MT Training Bug** - ✅ FIXED - Distance penalty now works correctly
-3. **Visual Debug Line** - ✅ ADDED - "Laser sight" shows coil-to-hotspot distance
+The panel CSS has been completely rewritten from scratch with a modern, clean design.
 
 ---
 
-## Issue #1: Sidebar Panel Not Scrollable ✅ FIXED (OVERHAULED)
+## The Fix: Don't Make Scroll Container a Flex Parent
 
-### Symptoms
-Panel content was being cut off and sections were overlapping. No scrollbar appeared.
+**Root Cause**: When `.panel-body` was `display: flex`, the child sections participated in flex layout and competed for space, causing them to compress instead of overflow.
 
-### Root Cause
-The flexbox-based layout had cascading issues across multiple containers. Different browsers handled the flex chain inconsistently, causing sections to collapse or overflow incorrectly.
-
-### Solution: Position Absolute Layout (Bulletproof)
-
-Completely rewrote the panel layout architecture to use **position:absolute** instead of flexbox for the header/body separation. This guarantees correct sizing regardless of content:
+**Solution**: Remove `display: flex` from `.panel-body`. Let children stack in normal block flow.
 
 ```css
-/* BULLETPROOF LAYOUT ARCHITECTURE:
- * .machine-panel        - position:relative, height:100%, overflow:hidden
- *   .panel-header       - position:absolute, top:0, height:40px
- *   .panel-body         - position:absolute, top:40px, bottom:0, overflow-y:auto
- *     .panel-section    - normal block flow, margin-bottom for spacing
- */
-
-.machine-panel {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-.panel-header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--header-height);
-}
-
 .panel-body {
-  position: absolute;
-  top: var(--header-height);
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow-y: auto;
+  flex: 1;           /* Takes remaining space in parent */
+  min-height: 0;     /* Allows shrinking below content */
+  overflow-y: auto;  /* Scrolls when content overflows */
+  /* NO display: flex - children use block layout */
+}
+
+.panel-body > * + * {
+  margin-top: 12px;  /* Spacing via margin instead of gap */
 }
 ```
 
-**Why this works:** Position absolute removes elements from normal flow and sizes them relative to their positioned ancestor. This eliminates flexbox sizing ambiguity and guarantees:
-- Header stays fixed at top with exact height
-- Body fills remaining space (top to bottom)
-- Overflow-y: auto creates scrollbar when content exceeds space
-- Sections maintain natural block-level height
-
 ---
 
-## Issue #2: MT Training Bug - Distance Always Zero ✅ FIXED
+## Complete Layout Architecture
 
-### Root Cause - Race Condition
-
-`setCurrentCoilWorldPos()` was placed AFTER an early return, meaning it was never called when the scalp surface wasn't ready:
-
-```javascript
-// BEFORE fix - position never set!
-if (isCoilLocked || !isReady || !scalpSurfaceRef.current) {
-  return;  // Exits here!
-}
-setCurrentCoilWorldPos([pos.x, pos.y, pos.z]);  // Never reached!
+```
+.machine-panel (flex column, height: 100%)
+├── .panel-header (flex-shrink: 0, height: 48px)
+└── .panel-body (flex: 1, min-height: 0, overflow-y: auto)
+    ├── .panel-section (normal block flow)
+    ├── .panel-section
+    └── .panel-section
 ```
 
-### Fixes Applied
-1. **TMSCoil.jsx**: Moved `setCurrentCoilWorldPos()` BEFORE the early return
-2. **tmsStore.js**: Added `hotspotProjected` flag
-3. **tmsStore.js**: `firePulse()` blocks until `hotspotProjected === true`
-4. **tmsStore.js**: `getCurrentDistanceMm()` returns 9999mm (not 0!) when data missing
-5. **RMTPanel.jsx**: Fire button disabled until ready, shows "Calibrating..."
-6. **MTDebugOverlay.jsx**: Shows `hotspotProjected` status
+**Key insight**: The outer panel uses flexbox to divide space between header and body. But the body itself is NOT a flex container - it's just a scrolling block container.
 
 ---
 
-## Bonus: Visual Debug "Laser Sight" ✅ ADDED
+## Files Changed
 
-Per consultant recommendation, added visual debug line from coil to hotspot:
-
-- **Visibility:** Dev mode (always) OR when hotspot revealed (after trial)
-- **Color-coded:** Green (<10mm), Yellow (10-20mm), Red (>20mm)
-- **Visual markers:** Pink hotspot sphere and ring
-- **Performance:** Uses ref-based position updates (not React state)
+| File | Change |
+|------|--------|
+| `src/components/ui/MachinePanel.css` | Complete rewrite - modern design, proper scroll |
+| `src/components/ui/RMTPanel.css` | Same layout pattern applied |
+| `src/App.css` | Simplified panel-container |
 
 ---
 
-## File Changes Summary
+## Design Features
 
-| File | Changes |
-|------|---------|
-| `src/components/ui/MachinePanel.css` | Complete layout overhaul - position:absolute architecture |
-| `src/components/ui/RMTPanel.css` | Complete layout overhaul - position:absolute architecture |
-| `src/components/scene/TMSCoil.jsx` | Move position update before early return, add debug line |
-| `src/stores/tmsStore.js` | Add hotspotProjected flag, fix distance return value |
-| `src/components/ui/RMTPanel.jsx` | Disable fire button until ready |
-| `src/components/ui/MTDebugOverlay.jsx` | Show hotspotProjected status |
+- Dark theme (#0d0d12 background)
+- Cyan accent (#00d4ff) for interactive elements
+- Card-based sections with subtle borders
+- Custom scrollbar (8px, rounded)
+- Responsive at 700px and 550px heights
+- Status indicators with pulse animation
 
 ---
 
 ## Test Results
 
 All 22 MT Training tests pass ✅
-
----
-
-## Architecture Decision
-
-The flexbox-based scroll approach was unreliable across different viewport sizes. The position:absolute approach is more verbose but **guaranteed to work** because it doesn't depend on flex calculations propagating correctly through the component hierarchy.

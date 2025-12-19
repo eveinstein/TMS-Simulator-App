@@ -63,36 +63,35 @@
    ============================================================================ */
 
 .rmt-panel {
-  --rmt-header-height: 52px;
+  --header-h: 52px;
   
-  /* BULLETPROOF LAYOUT: Use position absolute for guaranteed sizing */
-  position: relative;
   width: 100%;
   height: 100%;
+  min-height: 0; /* CRITICAL for flex scroll */
   background: var(--bg-panel);
-  border-left: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   font-family: var(--font-sans);
   color: var(--text-primary);
-  overflow: hidden;
 }
 
 /* ============================================================================
-   HEADER - Fixed at top
+   HEADER - Fixed height
    ============================================================================ */
 
 .rmt-panel .panel-header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--rmt-header-height);
+  height: var(--header-h);
+  min-height: var(--header-h);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-lg);
   background: linear-gradient(180deg, #141418 0%, var(--bg-panel) 100%);
   border-bottom: 1px solid var(--border-subtle);
-  z-index: 1;
 }
 
 .rmt-panel .panel-title {
@@ -109,23 +108,25 @@
 }
 
 /* ============================================================================
-   BODY - SCROLL CONTAINER (fills remaining space)
+   BODY - SCROLL CONTAINER
    ============================================================================ */
 
 .rmt-panel .panel-body {
-  position: absolute;
-  top: var(--rmt-header-height);
-  left: 0;
-  right: 0;
-  bottom: 0;
+  flex: 1;
+  min-height: 0; /* CRITICAL: allows flex item to shrink and enable scroll */
   overflow-y: auto;
   overflow-x: hidden;
   padding: var(--space-lg);
+  /* NOT a flex container - children stack in normal block flow */
   
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: var(--border-emphasis) transparent;
+}
+
+.rmt-panel .panel-body > * + * {
+  margin-top: var(--space-md);
 }
 
 .rmt-panel .panel-body::-webkit-scrollbar {
@@ -299,6 +300,7 @@
    ============================================================================ */
 
 .rmt-section {
+  flex-shrink: 0; /* Don't compress sections */
   background: var(--bg-section);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);

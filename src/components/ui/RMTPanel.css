@@ -59,39 +59,40 @@
 }
 
 /* ============================================================================
-   PANEL CONTAINER
+   PANEL CONTAINER - Position-based layout (NO FLEXBOX)
    ============================================================================ */
 
 .rmt-panel {
   --header-h: 52px;
   
+  position: relative;
   width: 100%;
   height: 100%;
-  min-height: 0; /* CRITICAL for flex scroll */
   background: var(--bg-panel);
   border-radius: 12px;
   border: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
   font-family: var(--font-sans);
   color: var(--text-primary);
 }
 
 /* ============================================================================
-   HEADER - Fixed height
+   HEADER - Fixed at top
    ============================================================================ */
 
 .rmt-panel .panel-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   height: var(--header-h);
-  min-height: var(--header-h);
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-lg);
   background: linear-gradient(180deg, #141418 0%, var(--bg-panel) 100%);
   border-bottom: 1px solid var(--border-subtle);
+  z-index: 1;
 }
 
 .rmt-panel .panel-title {
@@ -108,16 +109,18 @@
 }
 
 /* ============================================================================
-   BODY - SCROLL CONTAINER
+   BODY - SCROLL CONTAINER (fills space below header)
    ============================================================================ */
 
 .rmt-panel .panel-body {
-  flex: 1;
-  min-height: 0; /* CRITICAL: allows flex item to shrink and enable scroll */
+  position: absolute;
+  top: var(--header-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: var(--space-lg);
-  /* NOT a flex container - children stack in normal block flow */
   
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -125,8 +128,13 @@
   scrollbar-color: var(--border-emphasis) transparent;
 }
 
-.rmt-panel .panel-body > * + * {
-  margin-top: var(--space-md);
+/* Spacing between sections - margin only, no flex */
+.rmt-panel .panel-body > * {
+  margin-bottom: var(--space-md);
+}
+
+.rmt-panel .panel-body > *:last-child {
+  margin-bottom: 0;
 }
 
 .rmt-panel .panel-body::-webkit-scrollbar {
@@ -300,7 +308,7 @@
    ============================================================================ */
 
 .rmt-section {
-  flex-shrink: 0; /* Don't compress sections */
+  /* Block-level section - no flex */
   background: var(--bg-section);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);

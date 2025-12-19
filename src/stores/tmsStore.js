@@ -130,28 +130,24 @@ export function calculateGrade(percentDiff) {
   return 'F';
 }
 
-/**
- * Generate a random offset from C3 for hotspot placement.
- * Returns UNPROJECTED position - MUST be projected to surface by caller!
- * This is just the target direction, not the final surface position.
- */
-export function generateHotspotOffset(c3Position) {
+// Generate random hotspot near C3 on the scalp surface
+function generateHotspotPosition(c3Position) {
   if (!c3Position) {
     // Default position if C3 not available
     return [0.05, 0.12, 0.05];
   }
   
-  // Random offset within radius (in XZ plane)
+  // Random offset within radius (in XZ plane to stay on scalp)
   const radius = MT_CONSTANTS.maxHotspotRadius / 1000; // Convert mm to world units
   const angle = Math.random() * 2 * Math.PI;
   const r = Math.sqrt(Math.random()) * radius;
   
-  // NOTE: This is NOT on the scalp surface yet!
-  // The 3D scene must project this onto the actual surface mesh.
-  // We keep C3's Y as an approximation for the raycast target direction.
+  // Keep hotspot on scalp surface by maintaining C3's Y coordinate
+  // The scalp is roughly dome-shaped, so staying at the same height as C3
+  // keeps the hotspot approximately on the surface
   return [
     c3Position[0] + r * Math.cos(angle),
-    c3Position[1],
+    c3Position[1], // Same Y as C3 to stay on scalp surface
     c3Position[2] + r * Math.sin(angle),
   ];
 }
@@ -306,7 +302,7 @@ export const useTMSStore = create((set, get) => ({
   rmt: {
     phase: 'idle', // 'idle' | 'hunt' | 'titration' | 'complete'
     trialNumber: 0,
-    hotspotPosition: null, // MUST be on scalp surface!
+    hotspotPosition: null,
     trueMT: null,
     hotspotRevealed: false,
     intensity: 50,
@@ -317,28 +313,17 @@ export const useTMSStore = create((set, get) => ({
     titrationLog: [],
     completionResults: null,
     lastPulseTime: 0,
-    // Debug data for dev overlay
-    debugData: null,
   },
   
-  // Current coil world position (updated by TMSCoil every frame)
-  // Used for real-time distance computation
-  currentCoilWorldPos: null,
-  setCurrentCoilWorldPos: (pos) => set({ currentCoilWorldPos: pos }),
-  
-  /**
-   * Start new trial - generates trueMT but requires surface-projected hotspot
-   * The scene component must call setHotspotPosition with the projected position
-   */
   startNewTrial: (c3Position) => {
-    const hotspotOffset = generateHotspotOffset(c3Position);
+    const hotspotPosition = generateHotspotPosition(c3Position);
     const trueMT = generateTrueMT();
     
     set(state => ({
       rmt: {
         phase: 'hunt',
         trialNumber: state.rmt.trialNumber + 1,
-        hotspotPosition: hotspotOffset, // Temporary - will be overwritten by scene projection
+        hotspotPosition,
         trueMT,
         hotspotRevealed: false,
         intensity: 50,
@@ -349,53 +334,14 @@ export const useTMSStore = create((set, get) => ({
         titrationLog: [],
         completionResults: null,
         lastPulseTime: 0,
-        debugData: null,
       }
     }));
     
     console.log('[RMT] New trial started:', { 
       trialNumber: get().rmt.trialNumber,
-      hotspotOffset,
-      trueMT: Math.round(trueMT),
-      note: 'Hotspot needs surface projection!'
+      hotspotPosition,
+      trueMT: Math.round(trueMT)
     });
-    
-    // Return the offset so scene can project it
-    return { hotspotOffset, trueMT };
-  },
-  
-  /**
-   * Set the surface-projected hotspot position
-   * Called by scene component after raycasting
-   */
-  setHotspotPosition: (projectedPos) => {
-    set(state => ({
-      rmt: {
-        ...state.rmt,
-        hotspotPosition: projectedPos,
-      }
-    }));
-    console.log('[RMT] Hotspot projected to surface:', projectedPos);
-  },
-  
-  /**
-   * Compute current distance from coil to hotspot in mm
-   * Uses currentCoilWorldPos which is updated every frame
-   */
-  getCurrentDistanceMm: () => {
-    const state = get();
-    const { rmt, currentCoilWorldPos } = state;
-    
-    if (!rmt.hotspotPosition || !currentCoilWorldPos) {
-      return 0;
-    }
-    
-    // Euclidean distance in world units, converted to mm
-    const dx = currentCoilWorldPos[0] - rmt.hotspotPosition[0];
-    const dy = currentCoilWorldPos[1] - rmt.hotspotPosition[1];
-    const dz = currentCoilWorldPos[2] - rmt.hotspotPosition[2];
-    const distWorld = Math.sqrt(dx*dx + dy*dy + dz*dz);
-    return distWorld * 1000; // Convert to mm
   },
   
   setRMTIntensity: (intensity) => set(state => ({
@@ -411,7 +357,7 @@ export const useTMSStore = create((set, get) => ({
   
   firePulse: (distanceToHotspotMm) => {
     const state = get();
-    const { rmt, currentCoilWorldPos } = state;
+    const { rmt } = state;
     
     if (rmt.phase !== 'hunt' && rmt.phase !== 'titration') {
       return null;
@@ -425,11 +371,9 @@ export const useTMSStore = create((set, get) => ({
     
     const trueMT = rmt.trueMT || 50;
     const intensity = rmt.intensity;
-    const penalty = calculateDistancePenalty(distanceToHotspotMm);
     const apparentMT = calculateApparentMT(trueMT, distanceToHotspotMm);
     const probability = calculateTwitchProbability(intensity, apparentMT);
-    const randomDraw = Math.random();
-    const twitch = randomDraw < probability;
+    const twitch = sampleTwitch(probability);
     
     let amplitude = 0;
     let category = 'none';
@@ -449,24 +393,6 @@ export const useTMSStore = create((set, get) => ({
       timestamp: now,
     };
     
-    // Debug data for dev overlay
-    const debugData = {
-      trueMT,
-      intensity,
-      coilPos: currentCoilWorldPos,
-      hotspotPos: rmt.hotspotPosition,
-      distanceMm: distanceToHotspotMm,
-      penalty,
-      apparentMT,
-      probability,
-      randomDraw,
-      twitch,
-    };
-    
-    if (import.meta.env.DEV) {
-      console.log('[RMT DEBUG] Pulse fired:', debugData);
-    }
-    
     if (rmt.phase === 'hunt') {
       set({
         rmt: {
@@ -474,7 +400,6 @@ export const useTMSStore = create((set, get) => ({
           lastPulseResult: pulseResult,
           distanceToHotspot: distanceToHotspotMm,
           lastPulseTime: now,
-          debugData,
         }
       });
     } else if (rmt.phase === 'titration') {
@@ -490,7 +415,6 @@ export const useTMSStore = create((set, get) => ({
           titrationLog: [...rmt.titrationLog, { pulse: newCount, hit: twitch }],
           distanceToHotspot: distanceToHotspotMm,
           lastPulseTime: now,
-          debugData,
         }
       });
     }

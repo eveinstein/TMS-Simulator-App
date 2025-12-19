@@ -12,7 +12,6 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { TMSScene } from './components/scene/TMSScene';
 import { MachinePanel } from './components/ui/MachinePanel';
 import { RMTPanel } from './components/ui/RMTPanel';
-import { MTDebugOverlay } from './components/ui/MTDebugOverlay';
 import { useTMSStore } from './stores/tmsStore';
 import { getScaleData } from './utils/scaleNormalization';
 import './App.css';
@@ -319,9 +318,6 @@ function App() {
       
       {/* Target popup */}
       <TargetPopup target={showPopup} onClose={handleClosePopup} />
-      
-      {/* MT Debug overlay (dev only) */}
-      <MTDebugOverlay />
       
       {/* Dev tools */}
       <DevTools />

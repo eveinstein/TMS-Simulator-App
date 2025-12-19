@@ -23,7 +23,6 @@ export function RMTPanel() {
     completeTrial,
     resetRMT,
     requestSnap,
-    getCurrentDistanceMm,
   } = useTMSStore();
   
   const [claimedMT, setClaimedMT] = useState('');
@@ -36,23 +35,15 @@ export function RMTPanel() {
     startNewTrial(c3Position);
   }, [startNewTrial, c3Position]);
   
-  // FIXED: Compute fresh distance at fire time, not cached value!
   const handleFirePulse = useCallback(() => {
-    const distance = getCurrentDistanceMm();
-    if (import.meta.env.DEV) {
-      console.log('[RMTPanel] Fire pulse - fresh distance:', distance.toFixed(2), 'mm');
-    }
+    const distance = rmt.distanceToHotspot || 0;
     firePulse(distance);
-  }, [firePulse, getCurrentDistanceMm]);
+  }, [firePulse, rmt.distanceToHotspot]);
   
-  // FIXED: Compute fresh distance for 10-pulse trial too!
   const handleRunTenPulse = useCallback(() => {
-    const distance = getCurrentDistanceMm();
-    if (import.meta.env.DEV) {
-      console.log('[RMTPanel] 10-pulse trial - fresh distance:', distance.toFixed(2), 'mm');
-    }
+    const distance = rmt.distanceToHotspot || 0;
     runTenPulseTrial(distance);
-  }, [runTenPulseTrial, getCurrentDistanceMm]);
+  }, [runTenPulseTrial, rmt.distanceToHotspot]);
   
   const handleComplete = useCallback(() => {
     const mt = parseInt(claimedMT, 10);
@@ -60,9 +51,8 @@ export function RMTPanel() {
       alert('Please enter a valid MT value (0-100)');
       return;
     }
-    const finalDistance = getCurrentDistanceMm();
-    completeTrial(mt, finalDistance);
-  }, [claimedMT, completeTrial, getCurrentDistanceMm]);
+    completeTrial(mt, rmt.distanceToHotspot || 0);
+  }, [claimedMT, completeTrial, rmt.distanceToHotspot]);
   
   const handleReset = useCallback(() => {
     resetRMT();
@@ -383,8 +373,7 @@ export function RMTPanel() {
             className="btn-action submit-current"
             onClick={() => {
               if (rmt.intensity > 0 && rmt.titrationCount > 0) {
-                const finalDistance = getCurrentDistanceMm();
-                completeTrial(rmt.intensity, finalDistance);
+                completeTrial(rmt.intensity, rmt.distanceToHotspot || 0);
               }
             }}
             disabled={rmt.titrationCount === 0}

@@ -135,12 +135,6 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
   const firePulse = useTMSStore(s => s.firePulse);
   const targetPositions = useTMSStore(s => s.targetPositions);
   const coilResetTrigger = useTMSStore(s => s.coilResetTrigger);
-  const setCurrentCoilWorldPos = useTMSStore(s => s.setCurrentCoilWorldPos);
-  const setHotspotPosition = useTMSStore(s => s.setHotspotPosition);
-  const getCurrentDistanceMm = useTMSStore(s => s.getCurrentDistanceMm);
-  
-  // Track previous hotspot for projection
-  const lastProjectedHotspotRef = useRef(null);
   
   // Process coil model once
   const clonedScene = useMemo(() => {
@@ -363,11 +357,8 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
           (rmt.phase === 'hunt' || rmt.phase === 'titration')) {
         e.preventDefault();
         if (rmt.hotspotPosition) {
-          // Use the store's distance computation for consistency
-          const dist = getCurrentDistanceMm();
-          if (import.meta.env.DEV) {
-            console.log('[TMSCoil] Spacebar pulse - distance:', dist.toFixed(2), 'mm');
-          }
+          const hotspot = new THREE.Vector3(...rmt.hotspotPosition);
+          const dist = smoothedRef.current.position.distanceTo(hotspot) * 1000;
           firePulse(dist);
         }
       }
@@ -387,7 +378,7 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [mode, rmt.phase, rmt.hotspotPosition, firePulse, getCurrentDistanceMm]);
+  }, [mode, rmt.phase, rmt.hotspotPosition, firePulse]);
   
   // ============================================================================
   // FRAME UPDATE - Movement loop + smoothing + snap handling
@@ -511,30 +502,6 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
     const quat = smoothedRef.current.quaternion;
     setCoilPosition([pos.x, pos.y, pos.z]);
     setCoilRotation([quat.x, quat.y, quat.z, quat.w]);
-    
-    // Update current coil world position for real-time distance calculation
-    setCurrentCoilWorldPos([pos.x, pos.y, pos.z]);
-    
-    // === HOTSPOT SURFACE PROJECTION ===
-    // When a new trial starts, project the hotspot offset to the actual scalp surface
-    if (mode === 'rmt' && rmt.hotspotPosition && scalpSurfaceRef.current) {
-      const hotspotPosStr = JSON.stringify(rmt.hotspotPosition);
-      if (lastProjectedHotspotRef.current !== hotspotPosStr) {
-        // New hotspot needs projection
-        const targetPos = new THREE.Vector3(...rmt.hotspotPosition);
-        const surfaceResult = scalpSurfaceRef.current.findSurfacePoint(targetPos);
-        
-        if (surfaceResult) {
-          const projected = [surfaceResult.point.x, surfaceResult.point.y, surfaceResult.point.z];
-          setHotspotPosition(projected);
-          lastProjectedHotspotRef.current = JSON.stringify(projected);
-          console.log('[TMSCoil] Projected hotspot to surface:', projected);
-        } else {
-          console.warn('[TMSCoil] Failed to project hotspot to surface');
-          lastProjectedHotspotRef.current = hotspotPosStr; // Mark as attempted
-        }
-      }
-    }
     
     // Notify move callback
     if (moved) {

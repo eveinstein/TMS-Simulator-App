@@ -127,14 +127,12 @@
 
 /* === SCROLLABLE BODY === */
 .panel-body {
-  flex: 1 1 0;  /* Changed from 'auto' to '0' for better flex scroll behavior */
+  flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: var(--space-sm);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
+  /* NOT a flex container - children stack naturally with their intrinsic heights */
 }
 
 /* Custom scrollbar */
@@ -157,11 +155,16 @@
 
 /* === SECTIONS === */
 .panel-section {
-  flex-shrink: 0;
+  /* Static height - sections maintain their natural size */
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--panel-border);
   border-radius: 8px;
   overflow: hidden;
+  margin-bottom: var(--space-sm);  /* Spacing between sections */
+}
+
+.panel-section:last-child {
+  margin-bottom: 0;
 }
 
 .panel-section.collapsible {

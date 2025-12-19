@@ -27,16 +27,16 @@
   --space-md: 12px;
   --space-lg: 16px;
   
-  /* Panel dimensions */
+  /* Panel dimensions - CRITICAL: must be constrained to parent */
   display: flex;
   flex-direction: column;
   height: 100%;
-  max-height: 100%;
-  min-height: 0;
+  max-height: 100%;  /* Never exceed parent */
+  min-height: 0;     /* Allow shrinking */
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--panel-radius);
-  overflow: hidden;
+  overflow: hidden;  /* Panel itself doesn't scroll - panel-body does */
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 12px;
   color: var(--text-primary);
@@ -127,12 +127,24 @@
 
 /* === SCROLLABLE BODY === */
 .panel-body {
-  flex: 1 1 0;
+  /* Take remaining space - use separate properties for browser compatibility */
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0;
+  
+  /* CRITICAL: Both min-height AND height: 0 needed for flex scroll */
   min-height: 0;
+  height: 0;  /* Forces flex item to respect overflow */
+  
+  /* Scrolling */
   overflow-y: auto;
   overflow-x: hidden;
+  
+  /* Spacing */
   padding: var(--space-sm);
-  /* NOT a flex container - children stack naturally with their intrinsic heights */
+  
+  /* Ensure content stacks naturally - NOT a flex container */
+  /* Children (sections) use block layout with margin for spacing */
 }
 
 /* Custom scrollbar */
@@ -792,7 +804,6 @@
   
   .panel-body {
     padding: 6px;
-    gap: 6px;
   }
   
   .session-monitor {

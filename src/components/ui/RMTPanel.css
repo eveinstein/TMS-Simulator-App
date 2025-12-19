@@ -108,8 +108,16 @@
    ============================================================================ */
 
 .rmt-panel .panel-body {
-  flex: 1 1 0;  /* Changed from 'auto' to '0' for better flex scroll behavior */
+  /* Take remaining space - use separate properties for browser compatibility */
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0;
+  
+  /* CRITICAL: Both min-height AND height: 0 needed for flex scroll */
   min-height: 0;
+  height: 0;  /* Forces flex item to respect overflow */
+  
+  /* Scrolling */
   overflow-y: auto;
   overflow-x: hidden;
   padding: var(--space-lg);

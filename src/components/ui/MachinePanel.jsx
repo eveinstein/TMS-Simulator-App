@@ -41,7 +41,7 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
   const resetCoilPosition = useTMSStore(s => s.resetCoilPosition);
   
   // Local UI state - sections collapsed by default for compact view
-  const [showTargets, setShowTargets] = useState(false);
+  const [showTargets, setShowTargets] = useState(true);
   const [showProtocol, setShowProtocol] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [pulseFlash, setPulseFlash] = useState(false);
@@ -235,110 +235,6 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
       {/* Scrollable Body */}
       <div className="panel-body">
         
-        {/* === LIVE SESSION MONITOR === Always visible when running */}
-        {(session.isRunning || session.pulsesDelivered > 0) && (
-          <section className={`panel-section session-section ${session.isRunning ? 'active' : ''}`}>
-            <div className="session-monitor">
-              {/* Compact pulse counter */}
-              <div className={`pulse-display ${pulseFlash ? 'flash' : ''}`}>
-                <span className="pulse-current">{session.pulsesDelivered}</span>
-                <span className="pulse-separator">/</span>
-                <span className="pulse-total">{protocol.totalPulses || '—'}</span>
-                {protocol.frequency && (
-                  <span className="freq-tag">{protocol.frequency}Hz</span>
-                )}
-              </div>
-              
-              {/* Progress bar */}
-              <div className="session-progress">
-                <div 
-                  className={`session-progress-fill ${session.isRunning && !session.isPaused ? 'animated' : ''}`}
-                  style={{ width: `${Math.min(100, progress)}%` }}
-                />
-              </div>
-              
-              {/* ITI Progress - only during inter-train interval */}
-              {itiProgress.inITI && (
-                <div className="iti-indicator">
-                  <div className="iti-info">
-                    <span className="iti-label">Inter-train interval</span>
-                    <span className="iti-time">{itiProgress.remaining.toFixed(1)}s</span>
-                  </div>
-                  <div className="iti-bar">
-                    <div 
-                      className="iti-fill"
-                      style={{ width: `${itiProgress.progress * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-              
-              {/* Compact controls */}
-              <div className="session-controls-compact">
-                {!session.isRunning ? (
-                  <button className="btn-control start" onClick={handleStart} disabled={!isProtocolValid}>
-                    <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-                      <polygon points="5 3 19 12 5 21 5 3" />
-                    </svg>
-                    Start
-                  </button>
-                ) : (
-                  <button className={`btn-control ${session.isPaused ? 'resume' : 'pause'}`} onClick={handlePause}>
-                    {session.isPaused ? (
-                      <><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><polygon points="5 3 19 12 5 21 5 3" /></svg>Resume</>
-                    ) : (
-                      <><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>Pause</>
-                    )}
-                  </button>
-                )}
-                <button className="btn-control stop" onClick={handleStop} disabled={!session.isRunning}>
-                  <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12">
-                    <rect x="4" y="4" width="16" height="16" rx="2" />
-                  </svg>
-                </button>
-                <button className="btn-control reset" onClick={handleReset} disabled={session.isRunning}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                    <path d="M3 3v5h5" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
-        
-        {/* === QUICK START - Show when no session === */}
-        {!session.isRunning && session.pulsesDelivered === 0 && (
-          <section className="panel-section quick-start">
-            <div className="quick-start-content">
-              <div className="quick-presets">
-                <span className="quick-label">Quick Start</span>
-                <div className="preset-chips">
-                  {Object.keys(EXAMPLE_PROTOCOLS).slice(0, 3).map(name => (
-                    <button
-                      key={name}
-                      className="preset-chip"
-                      onClick={() => handleLoadExample(name)}
-                    >
-                      {name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <button 
-                className="btn-start-large"
-                onClick={handleStart}
-                disabled={!isProtocolValid}
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                  <polygon points="5 3 19 12 5 21 5 3" />
-                </svg>
-                {isProtocolValid ? 'Start Session' : 'Configure Protocol'}
-              </button>
-            </div>
-          </section>
-        )}
-        
         {/* === TARGET SELECTION - Collapsible === */}
         <section className="panel-section collapsible">
           <header 
@@ -375,7 +271,8 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
                     disabled={session.isRunning}
                     style={{ '--target-color': target.color }}
                   >
-                    {key}
+                    <span className="target-key">{key}</span>
+                    <span className="target-area">{target.label}</span>
                   </button>
                 ))}
               </div>
@@ -562,6 +459,122 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
               )}
             </div>
           )}
+        </section>
+        
+        {/* === SESSION STATUS - Always visible === */}
+        <section className={`panel-section session-status-section ${session.isRunning ? 'active' : ''}`}>
+          <header className="section-header">
+            <div className="section-title-row">
+              <h3 className="section-title">Session</h3>
+            </div>
+          </header>
+          <div className="session-status-content">
+            <div className="circular-progress-container">
+              <svg className="circular-progress" viewBox="0 0 100 100">
+                <circle 
+                  className="progress-bg" 
+                  cx="50" cy="50" r="42" 
+                  fill="none" 
+                  strokeWidth="6"
+                />
+                <circle 
+                  className="progress-fill" 
+                  cx="50" cy="50" r="42" 
+                  fill="none" 
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                  style={{
+                    strokeDasharray: `${2 * Math.PI * 42}`,
+                    strokeDashoffset: `${2 * Math.PI * 42 * (1 - progress / 100)}`,
+                  }}
+                />
+              </svg>
+              <div className="circular-progress-text">
+                <span className="progress-current">{session.pulsesDelivered}</span>
+                <span className="progress-divider">/</span>
+                <span className="progress-total">{protocol.totalPulses || '—'}</span>
+              </div>
+            </div>
+            <div className="session-stats-row">
+              <div className="session-stat">
+                <span className="stat-value">{Math.round(progress)}%</span>
+                <span className="stat-label">Complete</span>
+              </div>
+              <div className="session-stat">
+                <span className="stat-value">{timing ? formatDuration(timing.sessionDuration * (1 - progress / 100)) : '—'}</span>
+                <span className="stat-label">Remaining</span>
+              </div>
+            </div>
+            {/* ITI Progress - only during inter-train interval */}
+            {itiProgress.inITI && (
+              <div className="iti-indicator">
+                <div className="iti-info">
+                  <span className="iti-label">Inter-train interval</span>
+                  <span className="iti-time">{itiProgress.remaining.toFixed(1)}s</span>
+                </div>
+                <div className="iti-bar">
+                  <div 
+                    className="iti-fill"
+                    style={{ width: `${itiProgress.progress * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {!session.isRunning && session.pulsesDelivered === 0 && (
+              <button 
+                className="btn-session-start"
+                onClick={handleStart}
+                disabled={!isProtocolValid}
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+                {isProtocolValid ? 'Start Session' : 'Configure Protocol'}
+              </button>
+            )}
+            {session.isRunning && (
+              <div className="session-controls-row">
+                <button 
+                  className={`btn-session ${session.isPaused ? 'resume' : 'pause'}`}
+                  onClick={handlePause}
+                >
+                  {session.isPaused ? (
+                    <>
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                        <polygon points="5 3 19 12 5 21 5 3" />
+                      </svg>
+                      Resume
+                    </>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                        <rect x="6" y="4" width="4" height="16" />
+                        <rect x="14" y="4" width="4" height="16" />
+                      </svg>
+                      Pause
+                    </>
+                  )}
+                </button>
+                <button className="btn-session stop" onClick={handleStop}>
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12">
+                    <rect x="4" y="4" width="16" height="16" rx="2" />
+                  </svg>
+                </button>
+              </div>
+            )}
+            {!session.isRunning && session.pulsesDelivered > 0 && (
+              <button 
+                className="btn-session-reset"
+                onClick={handleReset}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                </svg>
+                Reset Session
+              </button>
+            )}
+          </div>
         </section>
         
       </div>

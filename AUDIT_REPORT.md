@@ -1,65 +1,85 @@
-# TMS Simulator - Complete UI Overhaul
+# TMS Simulator - Premium UI Overhaul
 
-## Status: ✅ COMPLETE REWRITE
+## Status: ✅ COMPLETE VISUAL REDESIGN
 
-The panel CSS has been completely rewritten from scratch with a modern, clean design.
+The panel has been completely redesigned with a premium medical device aesthetic.
 
 ---
 
-## The Fix: Don't Make Scroll Container a Flex Parent
+## Design System
 
-**Root Cause**: When `.panel-body` was `display: flex`, the child sections participated in flex layout and competed for space, causing them to compress instead of overflow.
-
-**Solution**: Remove `display: flex` from `.panel-body`. Let children stack in normal block flow.
-
+### Color Palette
 ```css
-.panel-body {
-  flex: 1;           /* Takes remaining space in parent */
-  min-height: 0;     /* Allows shrinking below content */
-  overflow-y: auto;  /* Scrolls when content overflows */
-  /* NO display: flex - children use block layout */
-}
+--bg-base: #08090c           /* Deep space black */
+--accent: #00e5ff            /* Electric cyan */
+--success: #00f5a0           /* Neon mint */
+--warning: #ffb800           /* Amber */
+--danger: #ff3b5c            /* Coral red */
+```
 
-.panel-body > * + * {
-  margin-top: 12px;  /* Spacing via margin instead of gap */
-}
+### Visual Effects
+- **Glassmorphism**: Translucent cards with backdrop blur
+- **Glow effects**: Subtle color halos on interactive elements
+- **Gradient backgrounds**: Multi-stop gradients for depth
+- **Animated progress**: Shimmer effect on progress bars
+
+---
+
+## New Components
+
+### 1. Target Selection Grid
+- 3-column grid layout
+- Two-line buttons: Key (F3) + Area label (L-DLPFC)
+- Color-coded dots matching target colors
+- Hover lift effect with border glow
+
+### 2. Protocol Settings
+- 2-column form layout
+- Large input fields with monospace numbers
+- Unit labels integrated into input wrappers
+- Focus states with cyan glow ring
+
+### 3. Session Status (NEW)
+- **Circular progress ring** - SVG-based, animated
+- **Stats row**: Percentage complete + time remaining
+- **ITI indicator**: Shows during inter-train intervals
+- **Contextual buttons**: Start/Pause/Resume/Stop/Reset
+
+---
+
+## Layout Architecture
+
+```
+.machine-panel (flex column)
+├── .panel-header (fixed 48px)
+│   ├── .panel-title (icon + text)
+│   └── .status-indicator (pill badge)
+└── .panel-body (flex: 1, scroll)
+    ├── .panel-section (TARGET SELECTION)
+    ├── .panel-section (PROTOCOL SETTINGS)
+    └── .panel-section (SESSION STATUS)
 ```
 
 ---
 
-## Complete Layout Architecture
+## Key Features
 
-```
-.machine-panel (flex column, height: 100%)
-├── .panel-header (flex-shrink: 0, height: 48px)
-└── .panel-body (flex: 1, min-height: 0, overflow-y: auto)
-    ├── .panel-section (normal block flow)
-    ├── .panel-section
-    └── .panel-section
-```
-
-**Key insight**: The outer panel uses flexbox to divide space between header and body. But the body itself is NOT a flex container - it's just a scrolling block container.
+| Feature | Description |
+|---------|-------------|
+| Glassmorphism | Cards use `backdrop-filter: blur(20px)` with translucent backgrounds |
+| Status Animations | Pulsing dots, shimmer progress bars |
+| Circular Progress | SVG ring with stroke-dasharray animation |
+| Responsive | Adapts at 750px and 600px viewport heights |
+| Monospace Numbers | `SF Mono` / `JetBrains Mono` for all numeric displays |
 
 ---
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `src/components/ui/MachinePanel.css` | Complete rewrite - modern design, proper scroll |
-| `src/components/ui/RMTPanel.css` | Same layout pattern applied |
-| `src/App.css` | Simplified panel-container |
-
----
-
-## Design Features
-
-- Dark theme (#0d0d12 background)
-- Cyan accent (#00d4ff) for interactive elements
-- Card-based sections with subtle borders
-- Custom scrollbar (8px, rounded)
-- Responsive at 700px and 550px heights
-- Status indicators with pulse animation
+| File | Lines | Description |
+|------|-------|-------------|
+| `MachinePanel.css` | ~750 | Complete rewrite with new design system |
+| `MachinePanel.jsx` | ~580 | Restructured with new Session section |
 
 ---
 

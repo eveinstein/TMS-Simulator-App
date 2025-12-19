@@ -2,7 +2,13 @@
  * MachinePanel.css
  * ================
  * Compact, dynamic TMS control panel with premium medical aesthetic.
- * Responsive design that adapts to available space.
+ * 
+ * LAYOUT ARCHITECTURE (Bulletproof Scroll):
+ * =========================================
+ * .machine-panel        - position:relative, height:100%, overflow:hidden
+ *   .panel-header       - position:absolute, top:0, height:40px
+ *   .panel-body         - position:absolute, top:40px, bottom:0, overflow-y:auto
+ *     .panel-section    - normal block flow, margin-bottom for spacing
  */
 
 /* === DESIGN TOKENS === */
@@ -10,6 +16,7 @@
   --panel-bg: rgba(15, 18, 25, 0.95);
   --panel-border: rgba(255, 255, 255, 0.06);
   --panel-radius: 12px;
+  --header-height: 40px;
   
   --text-primary: #f0f4f8;
   --text-secondary: rgba(148, 163, 184, 0.9);
@@ -27,16 +34,14 @@
   --space-md: 12px;
   --space-lg: 16px;
   
-  /* Panel dimensions - CRITICAL: must be constrained to parent */
-  display: flex;
-  flex-direction: column;
+  /* BULLETPROOF LAYOUT: Use position absolute for guaranteed sizing */
+  position: relative;
+  width: 100%;
   height: 100%;
-  max-height: 100%;  /* Never exceed parent */
-  min-height: 0;     /* Allow shrinking */
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: var(--panel-radius);
-  overflow: hidden;  /* Panel itself doesn't scroll - panel-body does */
+  overflow: hidden;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 12px;
   color: var(--text-primary);
@@ -54,15 +59,20 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-/* === HEADER === */
+/* === HEADER - Fixed at top === */
 .panel-header {
-  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--header-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-sm) var(--space-md);
+  padding: 0 var(--space-md);
   background: rgba(0, 0, 0, 0.2);
   border-bottom: 1px solid var(--panel-border);
+  z-index: 1;
 }
 
 .panel-title {
@@ -125,54 +135,44 @@
   50% { opacity: 0.5; transform: scale(0.8); }
 }
 
-/* === SCROLLABLE BODY === */
+/* === SCROLLABLE BODY - Fills remaining space === */
 .panel-body {
-  /* Take remaining space - use separate properties for browser compatibility */
-  flex-grow: 1;
-  flex-shrink: 1;
-  flex-basis: 0;
-  
-  /* CRITICAL: Both min-height AND height: 0 needed for flex scroll */
-  min-height: 0;
-  height: 0;  /* Forces flex item to respect overflow */
-  
-  /* Scrolling */
+  position: absolute;
+  top: var(--header-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  
-  /* Spacing */
   padding: var(--space-sm);
-  
-  /* Ensure content stacks naturally - NOT a flex container */
-  /* Children (sections) use block layout with margin for spacing */
 }
 
 /* Custom scrollbar */
 .panel-body::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
 }
 
 .panel-body::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
 }
 
 .panel-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
 }
 
 .panel-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.25);
 }
 
-/* === SECTIONS === */
+/* === SECTIONS - Block layout, natural height === */
 .panel-section {
-  /* Static height - sections maintain their natural size */
+  display: block;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--panel-border);
   border-radius: 8px;
-  overflow: hidden;
-  margin-bottom: var(--space-sm);  /* Spacing between sections */
+  margin-bottom: var(--space-sm);
 }
 
 .panel-section:last-child {
@@ -796,10 +796,7 @@
 @media (max-height: 600px) {
   .machine-panel {
     font-size: 11px;
-  }
-  
-  .panel-header {
-    padding: 6px 10px;
+    --header-height: 36px;  /* Smaller header on small screens */
   }
   
   .panel-body {

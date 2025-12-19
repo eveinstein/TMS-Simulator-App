@@ -307,6 +307,7 @@ export const useTMSStore = create((set, get) => ({
     phase: 'idle', // 'idle' | 'hunt' | 'titration' | 'complete'
     trialNumber: 0,
     hotspotPosition: null, // MUST be on scalp surface!
+    hotspotProjected: false, // CRITICAL: Whether hotspot has been projected to surface
     trueMT: null,
     hotspotRevealed: false,
     intensity: 50,
@@ -339,6 +340,7 @@ export const useTMSStore = create((set, get) => ({
         phase: 'hunt',
         trialNumber: state.rmt.trialNumber + 1,
         hotspotPosition: hotspotOffset, // Temporary - will be overwritten by scene projection
+        hotspotProjected: false, // CRITICAL: Not yet projected to surface!
         trueMT,
         hotspotRevealed: false,
         intensity: 50,
@@ -373,6 +375,7 @@ export const useTMSStore = create((set, get) => ({
       rmt: {
         ...state.rmt,
         hotspotPosition: projectedPos,
+        hotspotProjected: true, // CRITICAL: Mark hotspot as ready for distance calculations
       }
     }));
     console.log('[RMT] Hotspot projected to surface:', projectedPos);
@@ -386,8 +389,14 @@ export const useTMSStore = create((set, get) => ({
     const state = get();
     const { rmt, currentCoilWorldPos } = state;
     
+    // CRITICAL: Return large distance if data is missing to prevent false 0mm readings
     if (!rmt.hotspotPosition || !currentCoilWorldPos) {
-      return 0;
+      console.warn('[RMT] getCurrentDistanceMm: Missing data', {
+        hasHotspot: !!rmt.hotspotPosition,
+        hasCoilPos: !!currentCoilWorldPos,
+        hotspotProjected: rmt.hotspotProjected,
+      });
+      return 9999; // Large distance = high penalty = correct behavior
     }
     
     // Euclidean distance in world units, converted to mm
@@ -414,6 +423,12 @@ export const useTMSStore = create((set, get) => ({
     const { rmt, currentCoilWorldPos } = state;
     
     if (rmt.phase !== 'hunt' && rmt.phase !== 'titration') {
+      return null;
+    }
+    
+    // CRITICAL: Ensure hotspot is properly projected to surface before firing
+    if (!rmt.hotspotProjected) {
+      console.warn('[RMT] Cannot fire pulse - hotspot not yet projected to surface');
       return null;
     }
     
@@ -590,6 +605,7 @@ export const useTMSStore = create((set, get) => ({
       phase: 'idle',
       trialNumber: state.rmt.trialNumber, // Keep trial count
       hotspotPosition: null,
+      hotspotProjected: false,
       trueMT: null,
       hotspotRevealed: false,
       intensity: 50,

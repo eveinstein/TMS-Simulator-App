@@ -24,9 +24,13 @@ export function RMTPanel() {
     resetRMT,
     requestSnap,
     getCurrentDistanceMm,
+    currentCoilWorldPos,
   } = useTMSStore();
   
   const [claimedMT, setClaimedMT] = useState('');
+  
+  // Check if system is ready for firing
+  const isReadyToFire = rmt.hotspotProjected && currentCoilWorldPos !== null;
   
   // Get C3 position for trial generation
   const c3Position = targetPositions?.C3 ? 
@@ -206,11 +210,16 @@ export function RMTPanel() {
       
       {/* Actions */}
       <div className="action-buttons">
-        <button className="btn-action primary" onClick={handleFirePulse}>
+        <button 
+          className="btn-action primary" 
+          onClick={handleFirePulse}
+          disabled={!isReadyToFire}
+          title={!isReadyToFire ? 'Calibrating coil position...' : 'Fire a TMS pulse (Spacebar)'}
+        >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
-          Fire Pulse
+          {isReadyToFire ? 'Fire Pulse' : 'Calibrating...'}
         </button>
         <button className="btn-action secondary" onClick={advanceToTitration}>
           Advance to Titration

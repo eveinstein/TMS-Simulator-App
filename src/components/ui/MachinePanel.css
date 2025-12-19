@@ -127,7 +127,7 @@
 
 /* === SCROLLABLE BODY === */
 .panel-body {
-  flex: 1 1 auto;
+  flex: 1 1 0;  /* Changed from 'auto' to '0' for better flex scroll behavior */
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;

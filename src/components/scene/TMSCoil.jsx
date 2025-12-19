@@ -142,6 +142,11 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
   // Track previous hotspot for projection
   const lastProjectedHotspotRef = useRef(null);
   
+  // Debug visualization: line from coil to hotspot
+  const debugLineRef = useRef();
+  const debugLinePositionsRef = useRef(new Float32Array(6));
+  const [showDebugLine, setShowDebugLine] = useState(false);
+  
   // Process coil model once
   const clonedScene = useMemo(() => {
     const clone = gltf.scene.clone(true);
@@ -437,6 +442,11 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
       }
     }
     
+    // CRITICAL: Always update coil world position for distance calculations
+    // This must happen BEFORE any early returns!
+    const currentSmoothedPos = smoothedRef.current.position;
+    setCurrentCoilWorldPos([currentSmoothedPos.x, currentSmoothedPos.y, currentSmoothedPos.z]);
+    
     // Skip movement if locked or not ready
     if (isCoilLocked || !isReady || !scalpSurfaceRef.current) {
       return;
@@ -512,8 +522,8 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
     setCoilPosition([pos.x, pos.y, pos.z]);
     setCoilRotation([quat.x, quat.y, quat.z, quat.w]);
     
-    // Update current coil world position for real-time distance calculation
-    setCurrentCoilWorldPos([pos.x, pos.y, pos.z]);
+    // Note: currentCoilWorldPos is updated at the start of useFrame
+    // (before early returns) to ensure distance calculation always works
     
     // === HOTSPOT SURFACE PROJECTION ===
     // When a new trial starts, project the hotspot offset to the actual scalp surface
@@ -571,6 +581,37 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
           store.setHoverTargetKey(nearestTarget);
         }
       }
+    }
+    
+    // === DEBUG LINE: Visual "laser sight" from coil to hotspot ===
+    // Shows in dev mode (for debugging) OR when hotspot is revealed (for user feedback)
+    // Hidden during active trials to preserve training challenge
+    const shouldShowDebugLine = mode === 'rmt' && 
+      rmt.hotspotPosition && 
+      rmt.hotspotProjected &&
+      (import.meta.env.DEV || rmt.hotspotRevealed);
+      
+    if (shouldShowDebugLine) {
+      const coilPos = smoothedRef.current.position;
+      const positions = debugLinePositionsRef.current;
+      
+      // Update positions directly in the ref (no React state update!)
+      positions[0] = coilPos.x;
+      positions[1] = coilPos.y;
+      positions[2] = coilPos.z;
+      positions[3] = rmt.hotspotPosition[0];
+      positions[4] = rmt.hotspotPosition[1];
+      positions[5] = rmt.hotspotPosition[2];
+      
+      // Update the buffer geometry if the line exists
+      if (debugLineRef.current?.geometry?.attributes?.position) {
+        debugLineRef.current.geometry.attributes.position.needsUpdate = true;
+      }
+      
+      // Only update React state when visibility changes
+      if (!showDebugLine) setShowDebugLine(true);
+    } else {
+      if (showDebugLine) setShowDebugLine(false);
     }
   });
   
@@ -741,6 +782,74 @@ export function TMSCoil({ proxyMesh, fiducials, onCoilMove }) {
           <ringGeometry args={[0.015, 0.018, 32]} />
           <meshBasicMaterial color="#ff4444" side={THREE.DoubleSide} />
         </mesh>
+      )}
+      
+      {/* Debug "Laser Sight" - Visual line from coil to hotspot
+          Shows users exactly what the distance calculation sees
+          Color changes based on distance: green (close) -> yellow -> red (far) */}
+      {showDebugLine && (
+        <group>
+          {/* The main line */}
+          <line ref={debugLineRef}>
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                count={2}
+                array={debugLinePositionsRef.current}
+                itemSize={3}
+              />
+            </bufferGeometry>
+            <lineBasicMaterial 
+              color={(() => {
+                // Calculate distance for color coding
+                const pos = debugLinePositionsRef.current;
+                const dx = pos[0] - pos[3];
+                const dy = pos[1] - pos[4];
+                const dz = pos[2] - pos[5];
+                const distMm = Math.sqrt(dx*dx + dy*dy + dz*dz) * 1000;
+                if (distMm < 10) return "#22c55e"; // Green - on target
+                if (distMm < 20) return "#eab308"; // Yellow - close
+                return "#ef4444"; // Red - far
+              })()} 
+              linewidth={2}
+              transparent
+              opacity={0.8}
+              depthTest={false}
+            />
+          </line>
+          
+          {/* Hotspot marker - small sphere at target location */}
+          <mesh position={[
+            debugLinePositionsRef.current[3], 
+            debugLinePositionsRef.current[4], 
+            debugLinePositionsRef.current[5]
+          ]}>
+            <sphereGeometry args={[0.004, 16, 16]} />
+            <meshBasicMaterial 
+              color="#f472b6" 
+              transparent 
+              opacity={0.9}
+            />
+          </mesh>
+          
+          {/* Hotspot ring - pulsing ring for visibility */}
+          <mesh 
+            position={[
+              debugLinePositionsRef.current[3], 
+              debugLinePositionsRef.current[4], 
+              debugLinePositionsRef.current[5]
+            ]}
+            rotation={[Math.PI / 2, 0, 0]}
+          >
+            <ringGeometry args={[0.006, 0.008, 32]} />
+            <meshBasicMaterial 
+              color="#f472b6" 
+              transparent 
+              opacity={0.6}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        </group>
       )}
     </group>
   );

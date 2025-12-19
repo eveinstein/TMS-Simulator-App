@@ -154,9 +154,10 @@ body {
   width: var(--panel-width-collapsed);
   flex: 0 0 var(--panel-width-collapsed);
   
-  /* CRITICAL: These enable child scrolling */
+  /* CRITICAL: Explicit height for proper scroll chain */
+  height: calc(100vh - var(--header-height));
+  max-height: calc(100vh - var(--header-height));
   min-height: 0;
-  height: 100%;
   overflow: hidden; /* NOT auto - MachinePanel.panel-body scrolls */
   
   /* Layout */

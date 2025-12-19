@@ -71,6 +71,10 @@ export function MTDebugOverlay() {
         <div>Phase: <span style={{ color: '#fbbf24' }}>{rmt.phase}</span></div>
         <div>True MT: <span style={{ color: '#22c55e', fontWeight: 'bold' }}>{trueMT.toFixed(1)}%</span></div>
         <div>Intensity: <span style={{ color: '#60a5fa' }}>{intensity}%</span></div>
+        <div>Hotspot Ready: <span style={{ 
+          color: rmt.hotspotProjected ? '#22c55e' : '#ef4444',
+          fontWeight: 'bold'
+        }}>{rmt.hotspotProjected ? 'YES' : 'NO (calibrating)'}</span></div>
       </div>
       
       {/* Position Info */}

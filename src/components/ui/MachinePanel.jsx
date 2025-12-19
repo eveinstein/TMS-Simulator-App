@@ -2,7 +2,7 @@
  * MachinePanel.jsx
  * ================
  * Professional TMS neuromodulation control console.
- * Clean, medical-grade aesthetic without emoji clutter.
+ * Compact, responsive design with dynamic layout.
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
@@ -40,7 +40,8 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
   const requestSnap = useTMSStore(s => s.requestSnap);
   const resetCoilPosition = useTMSStore(s => s.resetCoilPosition);
   
-  // Local UI state
+  // Local UI state - sections collapsed by default for compact view
+  const [showTargets, setShowTargets] = useState(false);
   const [showProtocol, setShowProtocol] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [pulseFlash, setPulseFlash] = useState(false);
@@ -81,18 +82,19 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
     setNearestTarget(nearest);
   }, [coilPosition, targetPositions, setNearestTarget]);
   
-  // Session animation loop with pulse visual feedback
+  // Session animation loop with pulse visual feedback and ITI tracking
   useEffect(() => {
     if (!session.isRunning || session.isPaused) {
       if (frameRef.current) {
         cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
       }
-      setIsPulsing(false); // Reset 3D coil animation
+      setIsPulsing(false);
       setItiProgress({ inITI: false, progress: 0, remaining: 0 });
       return;
     }
     
+    // Create scheduler only once when session starts
     if (!schedulerRef.current) {
       if (protocol.stimType === 'iTBS' || protocol.stimType === 'cTBS') {
         schedulerRef.current = new ThetaBurstScheduler(protocol);
@@ -102,46 +104,44 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
     }
     
     let lastTime = performance.now();
+    let localPulseCount = session.pulsesDelivered; // Track locally to avoid stale closures
     
     const animate = (currentTime) => {
       const delta = (currentTime - lastTime) / 1000;
       lastTime = currentTime;
       
-      if (schedulerRef.current && session.isRunning && !session.isPaused) {
+      if (schedulerRef.current) {
         const pulses = schedulerRef.current.update(delta);
         
-        // Track ITI progress
-        const scheduler = schedulerRef.current;
-        if (scheduler.isInITI && scheduler.isInITI()) {
-          const iti = protocol.iti || 0;
-          const elapsed = scheduler.itiAccumulator || 0;
-          const progress = iti > 0 ? Math.min(1, elapsed / iti) : 0;
-          const remaining = Math.max(0, iti - elapsed);
-          setItiProgress({ inITI: true, progress, remaining });
-        } else {
-          if (itiProgress.inITI) {
-            setItiProgress({ inITI: false, progress: 0, remaining: 0 });
-          }
+        // Get ITI progress from scheduler
+        if (schedulerRef.current.getITIProgress) {
+          const itiState = schedulerRef.current.getITIProgress();
+          setItiProgress(itiState);
         }
         
-        // Trigger visual pulse feedback - both UI and 3D coil
+        // Trigger visual pulse feedback
         if (pulses > 0) {
+          localPulseCount += pulses;
           setPulseFlash(true);
-          setIsPulsing(true, protocol.intensity / 100); // Pass intensity for animation
+          setIsPulsing(true, protocol.intensity / 100);
+          
+          // Increment store pulse count
+          for (let i = 0; i < pulses; i++) {
+            incrementPulse();
+          }
+          
           setTimeout(() => {
             setPulseFlash(false);
             setIsPulsing(false);
           }, 60);
         }
         
-        for (let i = 0; i < pulses; i++) {
-          incrementPulse();
-        }
-        
-        if (session.pulsesDelivered >= protocol.totalPulses) {
+        // Check completion using local count
+        if (localPulseCount >= protocol.totalPulses) {
           stopSession();
           setIsPulsing(false);
           setItiProgress({ inITI: false, progress: 0, remaining: 0 });
+          schedulerRef.current = null;
           return;
         }
       }
@@ -157,7 +157,7 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
         frameRef.current = null;
       }
     };
-  }, [session.isRunning, session.isPaused, protocol, incrementPulse, stopSession, session.pulsesDelivered, setIsPulsing, itiProgress.inITI]);
+  }, [session.isRunning, session.isPaused, protocol, incrementPulse, stopSession, setIsPulsing]);
   
   // Handlers
   const handleStart = useCallback(() => {
@@ -173,11 +173,13 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
   const handleStop = useCallback(() => {
     schedulerRef.current = null;
     stopSession();
+    setItiProgress({ inITI: false, progress: 0, remaining: 0 });
   }, [stopSession]);
   
   const handleReset = useCallback(() => {
     schedulerRef.current = null;
     resetSession();
+    setItiProgress({ inITI: false, progress: 0, remaining: 0 });
   }, [resetSession]);
   
   const handleLoadExample = useCallback((name) => {
@@ -212,12 +214,9 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
     ? (session.pulsesDelivered / protocol.totalPulses) * 100 
     : 0;
   
-  // Pulse animation CSS variable
-  const pulseAnimationDuration = protocol.frequency ? `${1 / protocol.frequency}s` : '0.1s';
-  
   return (
     <div className={`machine-panel ${session.isRunning ? 'session-active' : ''}`}>
-      {/* Header */}
+      {/* Compact Header */}
       <div className="panel-header">
         <div className="panel-title">
           <svg className="panel-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -225,107 +224,200 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
           </svg>
           <span>TMS Control</span>
         </div>
-        <div className="panel-header-actions">
-          <button 
-            className="btn-icon"
-            onClick={onToggleExpand}
-            title={isExpanded ? 'Collapse panel' : 'Expand panel'}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-              {isExpanded ? (
-                <path d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-              ) : (
-                <path d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-              )}
-            </svg>
-          </button>
-          <div className={`status-indicator ${session.isRunning ? (session.isPaused ? 'paused' : 'active') : 'ready'}`}>
-            <span className="status-dot"></span>
-            <span className="status-text">
-              {session.isRunning ? (session.isPaused ? 'PAUSED' : 'ACTIVE') : 'READY'}
-            </span>
-          </div>
+        <div className={`status-indicator ${session.isRunning ? (session.isPaused ? 'paused' : 'active') : 'ready'}`}>
+          <span className="status-dot"></span>
+          <span className="status-text">
+            {session.isRunning ? (session.isPaused ? 'PAUSED' : 'ACTIVE') : 'READY'}
+          </span>
         </div>
       </div>
       
       {/* Scrollable Body */}
       <div className="panel-body">
         
-        {/* Target Selection */}
-        <section className="panel-section">
-          <header className="section-header">
-            <h3 className="section-title">Target Selection</h3>
-          </header>
-          <div className="section-content">
-            <div className="target-grid">
-              {Object.entries(TARGETS).map(([key, target]) => (
-                <button
-                  key={key}
-                  className={`target-btn ${selectedTargetKey === key ? 'selected' : ''}`}
-                  data-target={key}
-                  onClick={() => handleTargetClick(key)}
-                  disabled={session.isRunning}
-                  style={{ '--target-color': target.color }}
-                >
-                  <span className="target-dot"></span>
-                  <span className="target-code">{key}</span>
-                  <span className="target-label">{target.label}</span>
-                </button>
-              ))}
-            </div>
-            
-            <div className="target-actions">
-              <button
-                className="btn-subtle"
-                onClick={handleResetCoil}
-                disabled={session.isRunning}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                </svg>
-                Reset Position
-              </button>
+        {/* === LIVE SESSION MONITOR === Always visible when running */}
+        {(session.isRunning || session.pulsesDelivered > 0) && (
+          <section className={`panel-section session-section ${session.isRunning ? 'active' : ''}`}>
+            <div className="session-monitor">
+              {/* Compact pulse counter */}
+              <div className={`pulse-display ${pulseFlash ? 'flash' : ''}`}>
+                <span className="pulse-current">{session.pulsesDelivered}</span>
+                <span className="pulse-separator">/</span>
+                <span className="pulse-total">{protocol.totalPulses || '—'}</span>
+                {protocol.frequency && (
+                  <span className="freq-tag">{protocol.frequency}Hz</span>
+                )}
+              </div>
               
-              {nearestTarget?.name && (
-                <button 
-                  className={`btn-lock ${isCoilLocked ? 'locked' : ''}`}
-                  onClick={handleLockToggle}
-                  disabled={!isCoilLocked && nearestTarget.distance > 20}
-                >
-                  {isCoilLocked ? (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              {/* Progress bar */}
+              <div className="session-progress">
+                <div 
+                  className={`session-progress-fill ${session.isRunning && !session.isPaused ? 'animated' : ''}`}
+                  style={{ width: `${Math.min(100, progress)}%` }}
+                />
+              </div>
+              
+              {/* ITI Progress - only during inter-train interval */}
+              {itiProgress.inITI && (
+                <div className="iti-indicator">
+                  <div className="iti-info">
+                    <span className="iti-label">Inter-train interval</span>
+                    <span className="iti-time">{itiProgress.remaining.toFixed(1)}s</span>
+                  </div>
+                  <div className="iti-bar">
+                    <div 
+                      className="iti-fill"
+                      style={{ width: `${itiProgress.progress * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {/* Compact controls */}
+              <div className="session-controls-compact">
+                {!session.isRunning ? (
+                  <button className="btn-control start" onClick={handleStart} disabled={!isProtocolValid}>
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                      <polygon points="5 3 19 12 5 21 5 3" />
                     </svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                      <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
-                    </svg>
-                  )}
-                  {isCoilLocked ? 'Unlock' : 'Lock'} {nearestTarget.name}
+                    Start
+                  </button>
+                ) : (
+                  <button className={`btn-control ${session.isPaused ? 'resume' : 'pause'}`} onClick={handlePause}>
+                    {session.isPaused ? (
+                      <><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><polygon points="5 3 19 12 5 21 5 3" /></svg>Resume</>
+                    ) : (
+                      <><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>Pause</>
+                    )}
+                  </button>
+                )}
+                <button className="btn-control stop" onClick={handleStop} disabled={!session.isRunning}>
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12">
+                    <rect x="4" y="4" width="16" height="16" rx="2" />
+                  </svg>
                 </button>
+                <button className="btn-control reset" onClick={handleReset} disabled={session.isRunning}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+        
+        {/* === QUICK START - Show when no session === */}
+        {!session.isRunning && session.pulsesDelivered === 0 && (
+          <section className="panel-section quick-start">
+            <div className="quick-start-content">
+              <div className="quick-presets">
+                <span className="quick-label">Quick Start</span>
+                <div className="preset-chips">
+                  {Object.keys(EXAMPLE_PROTOCOLS).slice(0, 3).map(name => (
+                    <button
+                      key={name}
+                      className="preset-chip"
+                      onClick={() => handleLoadExample(name)}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button 
+                className="btn-start-large"
+                onClick={handleStart}
+                disabled={!isProtocolValid}
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+                {isProtocolValid ? 'Start Session' : 'Configure Protocol'}
+              </button>
+            </div>
+          </section>
+        )}
+        
+        {/* === TARGET SELECTION - Collapsible === */}
+        <section className="panel-section collapsible">
+          <header 
+            className="section-header clickable"
+            onClick={() => setShowTargets(!showTargets)}
+          >
+            <div className="section-title-row">
+              <h3 className="section-title">Target</h3>
+              {selectedTargetKey && (
+                <span className="section-value">{selectedTargetKey}</span>
               )}
             </div>
-          </div>
+            <svg 
+              className={`chevron ${showTargets ? 'open' : ''}`} 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2"
+              width="14" 
+              height="14"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </header>
+          
+          {showTargets && (
+            <div className="section-content">
+              <div className="target-chips">
+                {Object.entries(TARGETS).map(([key, target]) => (
+                  <button
+                    key={key}
+                    className={`target-chip ${selectedTargetKey === key ? 'selected' : ''}`}
+                    onClick={() => handleTargetClick(key)}
+                    disabled={session.isRunning}
+                    style={{ '--target-color': target.color }}
+                  >
+                    {key}
+                  </button>
+                ))}
+              </div>
+              <div className="target-actions-row">
+                <button className="btn-tiny" onClick={handleResetCoil} disabled={session.isRunning}>
+                  Reset Position
+                </button>
+                {nearestTarget?.name && nearestTarget.distance < 20 && (
+                  <button 
+                    className={`btn-tiny ${isCoilLocked ? 'active' : ''}`}
+                    onClick={handleLockToggle}
+                  >
+                    {isCoilLocked ? 'Unlock' : 'Lock'} {nearestTarget.name}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </section>
         
-        {/* Protocol Settings */}
-        <section className="panel-section">
+        {/* === PROTOCOL SETTINGS - Collapsible === */}
+        <section className="panel-section collapsible">
           <header 
             className="section-header clickable"
             onClick={() => setShowProtocol(!showProtocol)}
           >
-            <h3 className="section-title">Protocol Settings</h3>
+            <div className="section-title-row">
+              <h3 className="section-title">Protocol</h3>
+              {protocol.frequency && (
+                <span className="section-value">
+                  {protocol.frequency}Hz · {protocol.intensity}%
+                </span>
+              )}
+            </div>
             <svg 
               className={`chevron ${showProtocol ? 'open' : ''}`} 
               viewBox="0 0 24 24" 
               fill="none" 
               stroke="currentColor" 
               strokeWidth="2"
-              width="16" 
-              height="16"
+              width="14" 
+              height="14"
             >
               <path d="M6 9l6 6 6-6" />
             </svg>
@@ -333,10 +425,11 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
           
           {showProtocol && (
             <div className="section-content">
-              <div className="param-grid">
-                <div className="param-item">
-                  <label>Frequency</label>
-                  <div className="input-group">
+              {/* Compact 3-column grid */}
+              <div className="param-grid-compact">
+                <div className="param-cell">
+                  <label>Freq</label>
+                  <div className="param-input-wrap">
                     <input
                       type="number"
                       min="1"
@@ -346,26 +439,13 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
                       placeholder="—"
                       disabled={session.isRunning}
                     />
-                    <span className="input-unit">Hz</span>
+                    <span className="param-unit">Hz</span>
                   </div>
                 </div>
                 
-                <div className="param-item">
-                  <label>Stim Type</label>
-                  <select
-                    value={protocol.stimType || 'standard'}
-                    onChange={(e) => setProtocolField('stimType', e.target.value)}
-                    disabled={session.isRunning}
-                  >
-                    <option value="standard">Standard</option>
-                    <option value="iTBS">iTBS</option>
-                    <option value="cTBS">cTBS</option>
-                  </select>
-                </div>
-                
-                <div className="param-item">
+                <div className="param-cell">
                   <label>Intensity</label>
-                  <div className="input-group">
+                  <div className="param-input-wrap">
                     <input
                       type="number"
                       min="0"
@@ -375,11 +455,24 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
                       placeholder="—"
                       disabled={session.isRunning}
                     />
-                    <span className="input-unit">%MT</span>
+                    <span className="param-unit">%</span>
                   </div>
                 </div>
                 
-                <div className="param-item">
+                <div className="param-cell">
+                  <label>Type</label>
+                  <select
+                    value={protocol.stimType || 'standard'}
+                    onChange={(e) => setProtocolField('stimType', e.target.value)}
+                    disabled={session.isRunning}
+                  >
+                    <option value="standard">Std</option>
+                    <option value="iTBS">iTBS</option>
+                    <option value="cTBS">cTBS</option>
+                  </select>
+                </div>
+                
+                <div className="param-cell">
                   <label>Pulses/Train</label>
                   <input
                     type="number"
@@ -392,9 +485,9 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
                   />
                 </div>
                 
-                <div className="param-item">
+                <div className="param-cell">
                   <label>ITI</label>
-                  <div className="input-group">
+                  <div className="param-input-wrap">
                     <input
                       type="number"
                       min="0"
@@ -405,12 +498,12 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
                       placeholder="—"
                       disabled={session.isRunning}
                     />
-                    <span className="input-unit">sec</span>
+                    <span className="param-unit">s</span>
                   </div>
                 </div>
                 
-                <div className="param-item">
-                  <label>Total Pulses</label>
+                <div className="param-cell">
+                  <label>Total</label>
                   <input
                     type="number"
                     min="1"
@@ -423,180 +516,52 @@ export function MachinePanel({ isExpanded = false, onToggleExpand }) {
                 </div>
               </div>
               
+              {/* Timing summary - inline */}
               {timing && (
-                <div className="timing-summary">
-                  <div className="timing-item">
-                    <span className="timing-value">{timing.trains}</span>
-                    <span className="timing-label">trains</span>
-                  </div>
-                  <div className="timing-divider"></div>
-                  <div className="timing-item">
-                    <span className="timing-value">{timing.trainDuration.toFixed(1)}s</span>
-                    <span className="timing-label">each</span>
-                  </div>
-                  <div className="timing-divider"></div>
-                  <div className="timing-item">
-                    <span className="timing-value">~{formatDuration(timing.sessionDuration)}</span>
-                    <span className="timing-label">total</span>
-                  </div>
+                <div className="timing-inline">
+                  <span>{timing.trains} trains</span>
+                  <span className="timing-dot">·</span>
+                  <span>{timing.trainDuration.toFixed(1)}s each</span>
+                  <span className="timing-dot">·</span>
+                  <span>~{formatDuration(timing.sessionDuration)}</span>
                 </div>
               )}
               
-              {/* Quick Load Protocols */}
-              <div className="presets-section">
-                <button 
-                  className="presets-toggle"
-                  onClick={() => setShowAdvanced(!showAdvanced)}
+              {/* Preset toggle */}
+              <button 
+                className="presets-toggle-compact"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+              >
+                {showAdvanced ? 'Hide presets' : 'Load preset'}
+                <svg 
+                  className={`chevron-tiny ${showAdvanced ? 'open' : ''}`}
+                  viewBox="0 0 24 24" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  strokeWidth="2"
+                  width="10" 
+                  height="10"
                 >
-                  <span>{showAdvanced ? 'Hide' : 'Load'} preset protocols</span>
-                  <svg 
-                    className={`chevron-small ${showAdvanced ? 'open' : ''}`}
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="2"
-                    width="12" 
-                    height="12"
-                  >
-                    <path d="M6 9l6 6 6-6" />
-                  </svg>
-                </button>
-                
-                {showAdvanced && (
-                  <div className="preset-grid">
-                    {Object.keys(EXAMPLE_PROTOCOLS).map(name => (
-                      <button
-                        key={name}
-                        className="btn-preset"
-                        onClick={() => handleLoadExample(name)}
-                        disabled={session.isRunning}
-                      >
-                        {name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+              
+              {showAdvanced && (
+                <div className="preset-list">
+                  {Object.keys(EXAMPLE_PROTOCOLS).map(name => (
+                    <button
+                      key={name}
+                      className="preset-item"
+                      onClick={() => handleLoadExample(name)}
+                      disabled={session.isRunning}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-        </section>
-        
-        {/* Session Monitor */}
-        <section className={`panel-section session-section ${session.isRunning ? 'active' : ''}`}>
-          <header className="section-header">
-            <h3 className="section-title">Session</h3>
-            {session.isRunning && protocol.frequency && (
-              <span className="freq-badge">{protocol.frequency} Hz</span>
-            )}
-          </header>
-          <div className="section-content">
-            {/* Pulse Visualization */}
-            <div 
-              className={`pulse-visualizer ${session.isRunning && !session.isPaused ? 'active' : ''} ${pulseFlash ? 'flash' : ''}`}
-              style={{ '--pulse-duration': pulseAnimationDuration }}
-            >
-              <div className="pulse-rings">
-                <div className="pulse-ring ring-1"></div>
-                <div className="pulse-ring ring-2"></div>
-                <div className="pulse-ring ring-3"></div>
-              </div>
-              <div className="pulse-center">
-                <span className="pulse-count">{session.pulsesDelivered}</span>
-                <span className="pulse-total">/ {protocol.totalPulses || '—'}</span>
-              </div>
-            </div>
-            
-            {/* Progress Bar */}
-            <div className="progress-wrapper">
-              <div className="progress-bar">
-                <div 
-                  className={`progress-fill ${session.isRunning ? 'animated' : ''}`}
-                  style={{ width: `${Math.min(100, progress)}%` }}
-                />
-              </div>
-              <div className="progress-info">
-                <span className="progress-percent">{Math.round(progress)}%</span>
-                <span className="progress-time">{formatDuration(session.elapsedTime)}</span>
-              </div>
-            </div>
-            
-            {/* Inter-train Interval Progress - only visible during ITI */}
-            {itiProgress.inITI && (
-              <div className="iti-progress-wrapper">
-                <div className="iti-header">
-                  <span className="iti-label">Inter-train interval</span>
-                  <span className="iti-remaining">{itiProgress.remaining.toFixed(1)}s</span>
-                </div>
-                <div className="iti-progress-bar">
-                  <div 
-                    className="iti-progress-fill"
-                    style={{ width: `${itiProgress.progress * 100}%` }}
-                  />
-                </div>
-              </div>
-            )}
-            
-            {/* Control Buttons */}
-            <div className="session-controls">
-              {!session.isRunning ? (
-                <button 
-                  className="btn-start"
-                  onClick={handleStart}
-                  disabled={!isProtocolValid}
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-                    <polygon points="5 3 19 12 5 21 5 3" />
-                  </svg>
-                  <span>Start Session</span>
-                </button>
-              ) : (
-                <button 
-                  className={`btn-pause ${session.isPaused ? 'paused' : ''}`}
-                  onClick={handlePause}
-                >
-                  {session.isPaused ? (
-                    <>
-                      <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-                        <polygon points="5 3 19 12 5 21 5 3" />
-                      </svg>
-                      <span>Resume</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-                        <rect x="6" y="4" width="4" height="16" />
-                        <rect x="14" y="4" width="4" height="16" />
-                      </svg>
-                      <span>Pause</span>
-                    </>
-                  )}
-                </button>
-              )}
-              
-              <button 
-                className="btn-stop"
-                onClick={handleStop}
-                disabled={!session.isRunning}
-                title="Stop"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                  <rect x="4" y="4" width="16" height="16" rx="2" />
-                </svg>
-              </button>
-              
-              <button 
-                className="btn-reset"
-                onClick={handleReset}
-                disabled={session.isRunning}
-                title="Reset"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                </svg>
-              </button>
-            </div>
-          </div>
         </section>
         
       </div>

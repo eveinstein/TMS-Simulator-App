@@ -180,6 +180,21 @@ export class PulseScheduler {
   isInITI() {
     return this.inITI;
   }
+  
+  /**
+   * Get ITI progress information
+   * @returns {{ inITI: boolean, progress: number, remaining: number, elapsed: number }}
+   */
+  getITIProgress() {
+    const iti = this.protocol.iti || 0;
+    if (!this.inITI || iti <= 0) {
+      return { inITI: false, progress: 0, remaining: 0, elapsed: 0 };
+    }
+    const elapsed = this.itiAccumulator;
+    const progress = Math.min(1, elapsed / iti);
+    const remaining = Math.max(0, iti - elapsed);
+    return { inITI: true, progress, remaining, elapsed };
+  }
 }
 
 /**
@@ -281,5 +296,20 @@ export class ThetaBurstScheduler {
    */
   isInITI() {
     return this.inITI;
+  }
+  
+  /**
+   * Get ITI progress information (iTBS uses 8s ITI)
+   * @returns {{ inITI: boolean, progress: number, remaining: number, elapsed: number }}
+   */
+  getITIProgress() {
+    const iti = this.protocol.stimType === 'iTBS' ? 8 : 0;
+    if (!this.inITI || iti <= 0) {
+      return { inITI: false, progress: 0, remaining: 0, elapsed: 0 };
+    }
+    const elapsed = this.itiAccumulator;
+    const progress = Math.min(1, elapsed / iti);
+    const remaining = Math.max(0, iti - elapsed);
+    return { inITI: true, progress, remaining, elapsed };
   }
 }

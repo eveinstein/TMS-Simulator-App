@@ -1,0 +1,781 @@
+/**
+ * MachinePanel.css - Complete Rewrite
+ * ====================================
+ * Modern, clean TMS control panel with guaranteed scrolling.
+ * 
+ * Layout: Fixed header + scrollable body using calc()
+ */
+
+/* ============================================================================
+   CSS VARIABLES
+   ============================================================================ */
+.machine-panel {
+  --header-h: 48px;
+  --bg: #0d0d12;
+  --bg-card: #13131a;
+  --bg-input: #0a0a0f;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-light: rgba(255, 255, 255, 0.12);
+  --text: #f0f0f5;
+  --text-dim: rgba(255, 255, 255, 0.6);
+  --text-muted: rgba(255, 255, 255, 0.35);
+  --accent: #00d4ff;
+  --accent-glow: rgba(0, 212, 255, 0.15);
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --radius: 8px;
+  --radius-sm: 6px;
+}
+
+/* ============================================================================
+   PANEL CONTAINER - The outer shell
+   ============================================================================ */
+.machine-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0; /* CRITICAL for flex scroll */
+  background: var(--bg);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* ============================================================================
+   HEADER - Fixed height, never scrolls
+   ============================================================================ */
+.panel-header {
+  height: var(--header-h);
+  min-height: var(--header-h);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.panel-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-indicator.ready {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+}
+
+.status-indicator.active {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--success);
+}
+
+.status-indicator.paused {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-indicator.active .status-dot {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ============================================================================
+   BODY - Scrollable area (THIS IS THE KEY)
+   ============================================================================ */
+.panel-body {
+  flex: 1;
+  min-height: 0; /* CRITICAL: allows flex item to shrink and enable scroll */
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px;
+  /* NOT a flex container - children stack in normal block flow */
+}
+
+/* Add spacing between sections */
+.panel-body > * + * {
+  margin-top: 12px;
+}
+
+/* Scrollbar styling */
+.panel-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.panel-body::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.panel-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+.panel-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ============================================================================
+   SECTIONS - Cards that stack vertically
+   ============================================================================ */
+.panel-section {
+  flex-shrink: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.panel-section.collapsible {
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+/* Section header */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.section-header.clickable {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.section-header.clickable:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+
+.section-value {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  padding: 2px 8px;
+  background: var(--accent-glow);
+  border-radius: 4px;
+}
+
+.chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+.chevron.open {
+  transform: rotate(180deg);
+}
+
+/* Section content */
+.section-content {
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* ============================================================================
+   SESSION MONITOR - Live session display
+   ============================================================================ */
+.session-section {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.08) 0%, var(--bg-card) 100%);
+  border-color: rgba(0, 212, 255, 0.2);
+}
+
+.session-section.active {
+  border-color: rgba(0, 212, 255, 0.35);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
+}
+
+.session-monitor {
+  padding: 16px;
+}
+
+.pulse-display {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.pulse-current {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+
+.pulse-separator {
+  font-size: 20px;
+  color: var(--text-muted);
+}
+
+.pulse-total {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.freq-tag {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 3px 8px;
+  background: var(--accent-glow);
+  border-radius: 4px;
+}
+
+/* Progress bar */
+.session-progress {
+  height: 6px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.session-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #00ffcc);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.session-progress-fill.animated {
+  box-shadow: 0 0 10px var(--accent);
+}
+
+/* ITI indicator */
+.iti-indicator {
+  margin-bottom: 12px;
+  padding: 10px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+.iti-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.iti-label {
+  font-size: 11px;
+  color: var(--warning);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.iti-time {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warning);
+  font-family: 'SF Mono', monospace;
+}
+
+.iti-bar {
+  height: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.iti-fill {
+  height: 100%;
+  background: var(--warning);
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+
+/* Session controls */
+.session-controls-compact {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-control:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-light);
+}
+
+.btn-control:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.btn-control.start {
+  flex: 1;
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: var(--success);
+}
+
+.btn-control.start:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.25);
+}
+
+.btn-control.pause,
+.btn-control.resume {
+  flex: 1;
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: var(--warning);
+}
+
+.btn-control.stop {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: var(--danger);
+  padding: 8px 10px;
+}
+
+.btn-control.reset {
+  padding: 8px 10px;
+}
+
+/* ============================================================================
+   QUICK START
+   ============================================================================ */
+.quick-start {
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(0, 212, 255, 0.05) 100%);
+}
+
+.quick-start-content {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.quick-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.preset-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.preset-chip {
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.preset-chip:hover {
+  background: var(--accent-glow);
+  border-color: rgba(0, 212, 255, 0.3);
+  color: var(--accent);
+}
+
+.btn-start-large {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 20px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(16, 185, 129, 0.1));
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: var(--radius);
+  color: var(--success);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-start-large:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(16, 185, 129, 0.15));
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.2);
+}
+
+.btn-start-large:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   TARGET SELECTION
+   ============================================================================ */
+.target-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.target-chip {
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.target-chip::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--target-color, var(--accent));
+  opacity: 0.6;
+}
+
+.target-chip:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-light);
+}
+
+.target-chip.selected {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.target-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.target-actions-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-tiny {
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-tiny:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+}
+
+.btn-tiny.active {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-tiny:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   PROTOCOL SETTINGS
+   ============================================================================ */
+.param-grid-compact {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.param-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.param-cell label {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+}
+
+.param-input-wrap {
+  display: flex;
+  align-items: center;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.param-input-wrap input {
+  flex: 1;
+  min-width: 0;
+}
+
+.param-unit {
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 1px solid var(--border);
+}
+
+.param-cell input,
+.param-cell select {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.param-input-wrap input {
+  border: none;
+  border-radius: 0;
+}
+
+.param-cell input:focus,
+.param-cell select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.param-cell input::placeholder {
+  color: var(--text-muted);
+}
+
+.param-cell input:disabled,
+.param-cell select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Timing summary */
+.timing-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.timing-dot {
+  color: var(--text-muted);
+}
+
+/* Presets toggle */
+.presets-toggle-compact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.presets-toggle-compact:hover {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: var(--border-light);
+  color: var(--text-dim);
+}
+
+.chevron-tiny {
+  transition: transform 0.2s;
+}
+
+.chevron-tiny.open {
+  transform: rotate(180deg);
+}
+
+/* Preset list */
+.preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.preset-item {
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.preset-item:hover:not(:disabled) {
+  background: var(--accent-glow);
+  border-color: rgba(0, 212, 255, 0.3);
+  color: var(--accent);
+}
+
+.preset-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   ACTIVE SESSION STYLES
+   ============================================================================ */
+.machine-panel.session-active {
+  border-color: rgba(0, 212, 255, 0.25);
+  box-shadow: 0 0 30px rgba(0, 212, 255, 0.08);
+}
+
+/* ============================================================================
+   RESPONSIVE
+   ============================================================================ */
+@media (max-height: 700px) {
+  .machine-panel {
+    --header-h: 42px;
+    font-size: 12px;
+  }
+  
+  .panel-body {
+    padding: 10px;
+    gap: 10px;
+  }
+  
+  .pulse-current {
+    font-size: 26px;
+  }
+  
+  .session-monitor {
+    padding: 12px;
+  }
+  
+  .param-grid-compact {
+    gap: 8px;
+  }
+}
+
+@media (max-height: 550px) {
+  .machine-panel {
+    --header-h: 38px;
+    font-size: 11px;
+  }
+  
+  .panel-body {
+    padding: 8px;
+    gap: 8px;
+  }
+  
+  .pulse-current {
+    font-size: 22px;
+  }
+  
+  .param-grid-compact {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
